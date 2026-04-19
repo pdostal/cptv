@@ -1,0 +1,127 @@
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions: {}
+
+jobs:
+  ruff:
+    name: ruff (Python)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --dev --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  djlint:
+    name: djlint (Jinja2)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --dev --frozen
+      - run: uv run djlint cptv/templates/ --lint
+
+  eslint:
+    name: eslint (JavaScript)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.3.0
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npx eslint .
+
+  htmlhint:
+    name: htmlhint (HTML)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.3.0
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npx htmlhint 'cptv/templates/**/*.html'
+
+  prettier:
+    name: prettier (JSON / YAML)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.3.0
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npx prettier --check '**/*.json' '**/*.yaml' '**/*.yml' --ignore-path .gitignore
+
+  taplo:
+    name: taplo (TOML)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: uncenter/setup-taplo@v2
+      - run: taplo check
+
+  markdownlint:
+    name: markdownlint (Markdown)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.3.0
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npx markdownlint-cli2 '**/*.md' '#node_modules' '#.venv'
+
+  shellcheck:
+    name: shellcheck (Bash)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - run: shellcheck scripts/*.sh
+
+  hadolint:
+    name: hadolint (Containerfile)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Containerfile
+
+  typos:
+    name: typos (natural language)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: crate-ci/typos@v1

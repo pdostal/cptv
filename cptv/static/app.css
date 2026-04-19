@@ -1,0 +1,25 @@
+/* First-party overrides for Pico. Keep this file small. */
+
+article {
+  margin-block: 1rem;
+}
+
+article > header {
+  padding-block: 0.5rem;
+}
+
+#dual-stack ul,
+#geoip-section ul,
+#asn-section ul,
+#quick-links-section ul {
+  padding-left: 1.25rem;
+}
+
+#clock-skew-warning {
+  color: var(--pico-color-amber-500, #c08000);
+  font-weight: bold;
+}
+
+code.ip-current {
+  font-size: 1.25rem;
+}

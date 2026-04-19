@@ -1,0 +1,155 @@
+{% extends "base.html" %} {% block title %}cptv — your connection{% endblock title %}
+{% block content %} {% set ip = data.ip %} {% set geo = data.geoip %} {% set asn
+= data.asn %} {% set dns = data.dns %} {% set timing = data.timing %} {% set
+http = data.http %} {% set quick_links = data.quick_links %}
+
+<article id="ip-section">
+  <header><strong>🌐 IP Address</strong></header>
+  {% if ip.current %}
+  <p>
+    <code class="ip-current">{{ ip.current }}</code>
+    <small
+      >({{ ip.protocol }}{% if ip.is_private %}, private{% endif %}{% if
+      ip.is_cgnat %}, CGNAT ⚠️{% endif %})</small
+    >
+  </p>
+  {% else %}
+  <p><code>unknown</code></p>
+  {% endif %}
+
+  <div id="dual-stack" data-protocol="{{ ip.protocol or '' }}">
+    <p><small>Dual-stack check:</small></p>
+    <ul>
+      <li>IPv4: <code data-ds="ipv4">{{ ip.ipv4 or '…' }}</code></li>
+      <li>IPv6: <code data-ds="ipv6">{{ ip.ipv6 or '…' }}</code></li>
+    </ul>
+    <noscript
+      ><small>Enable JavaScript for dual-stack detection.</small></noscript
+    >
+  </div>
+</article>
+
+<article id="geoip-section">
+  <header><strong>🌍 Geolocation</strong></header>
+  {% if geo %}
+  <ul>
+    <li>
+      Country: <strong>{{ geo.country_code or '?' }}</strong> {{ geo.country or
+      '' }}
+    </li>
+    {% if geo.region %}
+    <li>Region: {{ geo.region }}</li>
+    {% endif %}
+    <li>City: {{ geo.city or '—' }}</li>
+    {% if geo.latitude is not none and geo.longitude is not none %}
+    <li>
+      Coords: {{ "%.4f"|format(geo.latitude) }}, {{ "%.4f"|format(geo.longitude)
+      }}
+    </li>
+    {% endif %}
+  </ul>
+  <details>
+    <summary>Compare with your browser's geolocation</summary>
+    <button type="button" id="request-geolocation">
+      Show my real location
+    </button>
+    <p id="browser-location"><small>Not requested.</small></p>
+  </details>
+  {% else %}
+  <p>
+    <small
+      >Geolocation unavailable (private IP or GeoLite2 database not
+      loaded).</small
+    >
+  </p>
+  {% endif %}
+</article>
+
+<article id="asn-section">
+  <header><strong>🔌 ASN / Network</strong></header>
+  {% if asn %}
+  <ul>
+    <li>ASN: <strong>AS{{ asn.number }}</strong></li>
+    {% if asn.name %}
+    <li>Operator: {{ asn.name }}</li>
+    {% endif %} {% if asn.prefix %}
+    <li>Prefix: <code>{{ asn.prefix }}</code></li>
+    {% endif %}
+    <li>
+      <a
+        href="{{ asn.looking_glass }}"
+        target="_blank"
+        rel="noopener noreferrer"
+        >BGP looking glass ↗</a
+      >
+    </li>
+  </ul>
+  {% else %}
+  <p>
+    <small
+      >ASN data unavailable (private IP or GeoLite2 ASN database not
+      loaded).</small
+    >
+  </p>
+  {% endif %}
+</article>
+
+<article id="dns-section">
+  <header><strong>🔎 DNS &amp; DNSSEC</strong></header>
+  {% if dns.resolver_ip %}
+  <p>
+    Resolver: <code>{{ dns.resolver_ip }}</code>
+    {% if dns.is_known_public %}({{ dns.resolver_name }}){% endif %}
+  </p>
+  {% else %}
+  <p>
+    <small
+      >Resolver detection requires a DNS-side probe (not configured in this
+      deployment).</small
+    >
+  </p>
+  {% endif %}
+  <p>
+    DNSSEC validation:
+    <span id="dnssec-status" aria-live="polite">⚪ checking…</span>
+  </p>
+  <noscript
+    ><small>DNSSEC validation check requires JavaScript.</small></noscript
+  >
+</article>
+
+<article id="timing-section">
+  <header><strong>⏱️ Timing</strong></header>
+  <p>
+    Server time:
+    <time
+      id="server-time"
+      datetime="{{ timing.server_timestamp }}"
+      data-server-ts="{{ timing.server_timestamp }}"
+    >
+      {{ timing.server_timestamp }}
+    </time>
+  </p>
+  <p>HTTP version: <code>{{ http.version }}</code></p>
+  <p id="clock-skew-warning" hidden>
+    ⚠️ Your clock differs from the server by <span id="clock-skew-value">…</span>.
+  </p>
+</article>
+
+{% if quick_links %}
+<article id="quick-links-section">
+  <header><strong>🔗 Quick Links</strong></header>
+  <ul>
+    {% for link in quick_links %}
+    <li>
+      {% if link.icon %}{{ link.icon }} {% endif %}
+      <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer"
+        >{{ link.label }}</a
+      >
+      {% if link.description %}<br /><small>{{ link.description }}</small>{%
+      endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</article>
+{% endif %} {% endblock content %}

@@ -1,0 +1,15 @@
+{
+  "threshold": 3,
+  "reporters": ["console"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/.venv/**",
+    "**/vendor/**",
+    "**/cptv/static/vendor/**",
+    "**/tests/**",
+    "**/*.lock",
+    "**/package-lock.json",
+    "**/uv.lock"
+  ],
+  "gitignore": true
+}
