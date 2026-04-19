@@ -1,0 +1,103 @@
+name: security
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions: {}
+
+jobs:
+  pip-audit:
+    name: pip-audit (Python CVEs)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - name: Export locked dependencies
+        run: uv export --frozen --no-dev --no-emit-project > requirements.txt
+      - name: Audit
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: requirements.txt
+
+  npm-audit:
+    name: npm audit (JS CVEs)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.3.0
+        with:
+          node-version: "22"
+      - name: Install npm dependencies
+        run: npm install --package-lock-only
+      - name: Audit
+        run: npm audit --audit-level=high
+
+  bandit:
+    name: bandit (Python SAST)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --dev --frozen
+      - name: Run bandit (HIGH severity blocks)
+        run: uv run bandit -c pyproject.toml -r cptv/ -ll
+
+  eslint-security:
+    name: eslint-plugin-security
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.3.0
+        with:
+          node-version: "22"
+      - name: Install
+        run: npm install --package-lock-only && npm install
+      - name: Lint
+        run: npx eslint .
+
+  trivy:
+    name: trivy (container image)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Stub GeoLite2 databases
+        # trivy scans the built image; we don't need real GeoLite2 data here.
+        run: |
+          mkdir -p vendor/geolite2
+          : > vendor/geolite2/GeoLite2-City.mmdb
+          : > vendor/geolite2/GeoLite2-ASN.mmdb
+      - name: Build image
+        run: docker build -f Containerfile -t cptv:ci .
+      - name: Scan image
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: cptv:ci
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy

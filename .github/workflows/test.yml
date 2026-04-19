@@ -1,0 +1,59 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions: {}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --dev --frozen
+      - run: uv run pytest -q
+
+  lighthouse:
+    name: lighthouse CI (a11y + best-practices)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.3.0
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - name: Install Python deps
+        run: uv sync --dev --frozen
+      - name: Install JS deps and build assets
+        run: |
+          npm install
+          npm run build
+      - name: Start app
+        run: |
+          uv run uvicorn cptv.main:app --host 127.0.0.1 --port 8000 &
+          echo $! > .app.pid
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "app failed to become healthy" >&2
+          exit 1
+      - name: Run Lighthouse CI
+        run: npx --yes @lhci/cli@0.14.x autorun --config=./lighthouserc.json
+      - name: Stop app
+        if: always()
+        run: |
+          if [[ -f .app.pid ]]; then kill "$(cat .app.pid)" || true; fi
