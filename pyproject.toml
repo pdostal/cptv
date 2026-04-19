@@ -1,0 +1,81 @@
+[project]
+name = "cptv"
+version = "0.0.1"
+description = "CaPTiVe — self-hosted network diagnostics tool (see PLAN.md)."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "geoip2>=5.2.0",
+    "jinja2>=3.1",
+    "pydantic-settings>=2.5",
+    "uvicorn[standard]>=0.30",
+]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "djlint>=1.36.4",
+    "httpx>=0.27",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "node_modules"]
+
+[tool.djlint]
+profile = "jinja"
+ignore = "J004,J018,H031"
+
+[tool.pylint.main]
+py-version = "3.12"
+ignore-paths = ["^\\.venv/.*$", "^node_modules/.*$", "^vendor/.*$", "^cptv/static/.*$"]
+
+[tool.pylint."messages control"]
+# Matches ruff line-length; keeps one formatter (ruff format) in charge of wrapping.
+max-line-length = 100
+disable = [
+    # Project convention: code is self-documenting. See CLAUDE.md "Default to writing no comments."
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    # Pydantic Settings / small value-object classes legitimately have no methods.
+    "too-few-public-methods",
+    # Intentional: route modules expose `_register(templates)` to signal "called by the app
+    # factory, not consumers". Renaming to public would lie about the contract.
+    "protected-access",
+    # Defensive: optional deps (geoip2 maxminddb) are caught broadly on purpose so the app
+    # degrades gracefully when the MMDB / library is missing. See services/geoip.py, asn.py.
+    "broad-exception-caught",
+    # Lazy-loaded heavy deps (geoip2.database) live inside functions on purpose.
+    "import-outside-toplevel",
+    # Ruff format owns wrapping; pylint's count disagrees with ruff's AST-based wrapping.
+    "line-too-long",
+]
+
+[tool.pylint.typecheck]
+# Pydantic v2 builds fields via descriptors pylint can't resolve statically.
+generated-members = ["pydantic.*"]
+ignored-classes = ["pydantic.fields.FieldInfo"]
+
+[tool.pylint.design]
+max-args = 8
+max-returns = 8

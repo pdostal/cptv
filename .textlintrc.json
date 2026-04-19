@@ -1,0 +1,38 @@
+{
+  "rules": {
+    "terminology": {
+      "defaultTerms": true,
+      "terms": [
+        "CPTV",
+        "CaPTiVe",
+        "GeoIP",
+        "GeoLite2",
+        "ASN",
+        "IPv4",
+        "IPv6",
+        "DNS",
+        "DNSSEC",
+        "HTMX",
+        "Jinja",
+        "Pico",
+        "MMDB",
+        "HTTP",
+        "HTTPS",
+        "JSON",
+        "URL",
+        "YAML",
+        "CSS",
+        "HTML",
+        "CI",
+        "CVE",
+        "MaxMind",
+        "README",
+        "TLS",
+        "TTL",
+        "Redis",
+        "API",
+        "FastAPI"
+      ]
+    }
+  }
+}

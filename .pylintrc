@@ -1,0 +1,38 @@
+# Mirrors the [tool.pylint.*] sections in pyproject.toml.
+# This file exists because super-linter's PYTHON_PYLINT validator searches for
+# .pylintrc in the repository root and does not fall back to pyproject.toml.
+
+[MAIN]
+py-version = 3.12
+ignore-paths = ^\\.venv/.*$,
+    ^node_modules/.*$,
+    ^vendor/.*$,
+    ^cptv/static/.*$
+
+[MESSAGES CONTROL]
+max-line-length = 100
+# Project convention: code is self-documenting (see CLAUDE.md); ruff format owns
+# wrapping (line-too-long); route modules use _register() as a deliberate signal
+# that calls come only from the app factory (protected-access); optional GeoIP deps
+# are caught broadly so the app degrades gracefully when MMDBs are absent
+# (broad-exception-caught); geoip2.database is lazy-loaded inside functions on
+# purpose to avoid import errors when the library is absent (import-outside-toplevel);
+# Pydantic Settings / small value-object classes need no public methods
+# (too-few-public-methods).
+disable = missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    too-few-public-methods,
+    protected-access,
+    broad-exception-caught,
+    import-outside-toplevel,
+    line-too-long
+
+[TYPECHECK]
+# Pydantic v2 builds fields via descriptors pylint can't resolve statically.
+generated-members = pydantic.*
+ignored-classes = pydantic.fields.FieldInfo
+
+[DESIGN]
+max-args = 8
+max-returns = 8
