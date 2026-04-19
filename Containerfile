@@ -36,9 +36,8 @@ RUN apt-get update \
 # We run uvicorn from the uv-managed venv, so pip isn't used at runtime — but
 # trivy still scans the system site-packages. Upgrade to a fixed version.
 # hadolint ignore=DL3013
-RUN python3 -m pip install --no-cache-dir --upgrade 'pip>=25.3'
-
-RUN useradd --system --create-home --uid 10001 cptv
+RUN python3 -m pip install --no-cache-dir --upgrade 'pip>=25.3' \
+    && useradd --system --create-home --uid 10001 cptv
 WORKDIR /app
 
 COPY --from=pydeps /build/.venv /app/.venv
