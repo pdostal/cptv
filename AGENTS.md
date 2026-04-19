@@ -29,6 +29,7 @@ Run all from the repository root.
 - JS lint: `npx eslint .`
 - JS dep audit: `npm audit --audit-level=high`
 - Python dep audit: `uv export --frozen --no-dev --no-emit-project | uvx pip-audit --requirement /dev/stdin --strict`
+- Markdown lint: `npx markdownlint-cli2 '**/*.md' '#node_modules' '#.venv'`
 
 ### Setup / build
 

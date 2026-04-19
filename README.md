@@ -28,16 +28,16 @@ The container expects [Valkey](https://valkey.io/) to be reachable for tracerout
 
 ### Configuration (environment variables)
 
-| Variable                  | Purpose                                                                                                                    | Default                                   |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `CPTV_QUICK_LINKS`        | JSON array of `{label,url,icon?,description?}` objects rendered as a "Quick Links" section. Empty/unset hides the section. | unset                                     |
-| `CPTV_GEOIP_CITY_DB`      | Path to `GeoLite2-City.mmdb`.                                                                                              | `/app/vendor/geolite2/GeoLite2-City.mmdb` |
-| `CPTV_GEOIP_ASN_DB`       | Path to `GeoLite2-ASN.mmdb`.                                                                                               | `/app/vendor/geolite2/GeoLite2-ASN.mmdb`  |
-| `CPTV_VALKEY_HOST`         | Valkey server hostname.                                                                                                    | `localhost`                               |
-| `CPTV_VALKEY_PORT`         | Valkey server port.                                                                                                        | `6379`                                    |
-| `CPTV_TRACEROUTE_CACHE_TTL`| Traceroute result cache TTL in seconds.                                                                                    | `3600`                                    |
-| `CPTV_MTR_PATH`            | Path to the `mtr` binary.                                                                                                  | `mtr`                                     |
-| `CPTV_MTR_COUNT`           | Number of ICMP probes per hop.                                                                                             | `5`                                       |
+| Variable                     | Purpose                                                                                                                    | Default                                   |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `CPTV_QUICK_LINKS`           | JSON array of `{label,url,icon?,description?}` objects rendered as a "Quick Links" section. Empty/unset hides the section. | unset                                     |
+| `CPTV_GEOIP_CITY_DB`         | Path to `GeoLite2-City.mmdb`.                                                                                              | `/app/vendor/geolite2/GeoLite2-City.mmdb` |
+| `CPTV_GEOIP_ASN_DB`          | Path to `GeoLite2-ASN.mmdb`.                                                                                               | `/app/vendor/geolite2/GeoLite2-ASN.mmdb`  |
+| `CPTV_VALKEY_HOST`           | Valkey server hostname.                                                                                                    | `localhost`                               |
+| `CPTV_VALKEY_PORT`           | Valkey server port.                                                                                                        | `6379`                                    |
+| `CPTV_TRACEROUTE_CACHE_TTL`  | Traceroute result cache TTL in seconds.                                                                                    | `3600`                                    |
+| `CPTV_MTR_PATH`              | Path to the `mtr` binary.                                                                                                  | `mtr`                                     |
+| `CPTV_MTR_COUNT`             | Number of ICMP probes per hop.                                                                                             | `5`                                       |
 
 All behaviour is configurable via env vars — no hardcoded constants in code.
 

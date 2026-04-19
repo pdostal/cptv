@@ -39,6 +39,7 @@ uv run pytest -q                       # Full test suite
 npx eslint .                           # JS lint
 npm audit --audit-level=high           # JS dep CVE scan
 uv export --frozen --no-dev --no-emit-project | uvx pip-audit --requirement /dev/stdin --strict  # Python dep CVE scan
+npx markdownlint-cli2 '**/*.md' '#node_modules' '#.venv'  # Markdown lint
 ```
 
 ## Setup / build commands
