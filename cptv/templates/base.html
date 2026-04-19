@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}cptv — network diagnostics{% endblock title %}</title>
+    <meta
+      name="description"
+      content="Self-hosted network diagnostics — IP, geolocation, ASN, DNS, traceroute, DNSSEC."
+    />
+    <link rel="stylesheet" href="/static/vendor/pico.min.css" />
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <header class="container">
+      <nav>
+        <ul>
+          <li>
+            <strong>cptv</strong> <small>— CaPTiVe network diagnostics</small>
+          </li>
+        </ul>
+        <ul>
+          <li><a href="/">home</a></li>
+          <li><a href="/details">details</a></li>
+          <li><a href="/help">help</a></li>
+          <li>
+            <a
+              href="https://github.com/pdostal/cptv"
+              target="_blank"
+              rel="noopener noreferrer"
+              >github</a
+            >
+          </li>
+        </ul>
+      </nav>
+    </header>
+
+    <main class="container">{% block content %}{% endblock content %}</main>
+
+    <footer class="container">
+      <hr />
+      <small>
+        Server sees only your IP. Everything else — location, history, DNSSEC —
+        is computed in your browser and stays there. 🔒
+        <br />
+        <a
+          href="https://github.com/pdostal/cptv"
+          target="_blank"
+          rel="noopener noreferrer"
+          >github.com/pdostal/cptv</a
+        >
+      </small>
+    </footer>
+
+    <script src="/static/vendor/htmx.min.js" defer></script>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

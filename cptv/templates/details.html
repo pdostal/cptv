@@ -1,0 +1,23 @@
+{% extends "index.html" %} {% block title %}cptv — details{% endblock title %} {%
+block content %} {{ super() }}
+<article id="request-section">
+  <header><strong>📋 Request details</strong></header>
+  {% set req = data.request %}
+  <ul>
+    <li>Method: <code>{{ req.method }}</code></li>
+    <li>Path: <code>{{ req.path }}</code></li>
+    <li>Direct client: <code>{{ req.client or '—' }}</code></li>
+    <li>Forwarded proto: <code>{{ data.http.protocol }}</code></li>
+    {% if data.http.referrer %}
+    <li>Referrer: <code>{{ data.http.referrer }}</code></li>
+    {% endif %}
+  </ul>
+  <details>
+    <summary>Headers seen by the app</summary>
+    <pre>
+{% for k, v in req.headers.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre
+    >
+  </details>
+</article>
+{% endblock content %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %} {% block title %}cptv — {{ heading }}{% endblock title %} {%
+block content %}
+<article>
+  <header><strong>{{ heading }}</strong></header>
+  {% if present %}
+  <dl>
+    {% for key, value in data.items() %}
+    <dt>{{ key }}</dt>
+    <dd>
+      {% if value is none %}
+      <small>—</small>
+      {% elif value is string and value.startswith("https://") %}
+      <a href="{{ value }}" target="_blank" rel="noopener noreferrer"
+        >{{ value }}</a
+      >
+      {% else %}
+      <code>{{ value }}</code>
+      {% endif %}
+    </dd>
+    {% endfor %}
+  </dl>
+  {% else %}
+  <p><small>Data unavailable for this client / deployment.</small></p>
+  {% endif %}
+  <p><a href="/">← back</a></p>
+</article>
+{% endblock content %}

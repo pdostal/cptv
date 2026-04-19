@@ -1,0 +1,49 @@
+{% extends "base.html" %} {% block title %}cptv — help{% endblock title %} {% block
+content %}
+<article>
+  <header><strong>Usage guide</strong></header>
+  <h2>Endpoints</h2>
+  <ul>
+    <li><code>/</code> — Full aggregated info (auto-detects format)</li>
+    <li><code>/ip</code> — Your current IP address</li>
+    <li><code>/ipv4</code> <code>/ip4</code> <code>/4</code> — IPv4 only</li>
+    <li><code>/ipv6</code> <code>/ip6</code> <code>/6</code> — IPv6 only</li>
+    <li><code>/geoip</code> — Geolocation</li>
+    <li><code>/asn</code> <code>/isp</code> — Network operator info</li>
+    <li><code>/dns</code> — DNS resolver classifier</li>
+    <li><code>/details</code> <code>/more</code> — Extended output</li>
+    <li><code>/help</code> — This page</li>
+    <li><code>/health</code> — Service health (JSON)</li>
+  </ul>
+
+  <h2>Subdomains</h2>
+  <ul>
+    <li>
+      <code>ipv4.{{ domain }}</code> — Force IPv4 (<code
+        >curl ipv4.{{ domain }}</code
+      >)
+    </li>
+    <li><code>ipv6.{{ domain }}</code> — Force IPv6</li>
+    <li><code>secure.{{ domain }}</code> — HTTPS-only variant</li>
+  </ul>
+
+  <h2>Content negotiation</h2>
+  <p>Every endpoint supports three response formats:</p>
+  <ul>
+    <li>Browser default → HTML</li>
+    <li>
+      <code>Accept: application/json</code> or <code>?format=json</code> → JSON
+    </li>
+    <li>curl user-agent or <code>?format=text</code> → plain text</li>
+  </ul>
+
+  <h2>Examples</h2>
+  <pre>
+curl {{ domain }}
+curl ipv4.{{ domain }}
+curl {{ domain }}/geoip
+curl {{ domain }}/asn?format=json
+MY_IP=$(curl -s ipv4.{{ domain }})</pre
+  >
+</article>
+{% endblock content %}
