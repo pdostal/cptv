@@ -27,12 +27,9 @@ jobs:
         run: |
           ref="${GITHUB_REF_NAME}"
           version="${ref#v}"
-          date="$(date -u +%Y%m%d)"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "version_date=${version}-${date}" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/build-push-image
         with:
-          maxmind_license_key: ${{ secrets.MAXMIND_LICENSE_KEY }}
           registry: ${{ env.REGISTRY }}
           image_name: ${{ env.IMAGE_NAME }}
           registry_user: ${{ github.actor }}
@@ -40,9 +37,25 @@ jobs:
           tags: |
             type=raw,value=latest
             type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=${{ steps.version.outputs.version_date }}
           labels: |
             org.opencontainers.image.title=cptv
             org.opencontainers.image.description=CaPTiVe — self-hosted network diagnostics.
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.licenses=MIT
+
+  github-release:
+    name: Create GitHub Release
+    needs: build-and-push
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${GITHUB_REF_NAME}" --generate-notes

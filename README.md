@@ -24,7 +24,7 @@ The container expects [Valkey](https://valkey.io/) to be reachable for tracerout
 
 - An nginx reverse proxy that injects `X-Base-Domain`, `X-Forwarded-For`, and `X-Forwarded-Proto`.
 - A Valkey instance reachable from the app container.
-- GeoLite2 data — baked into the image at build time, no runtime download needed.
+- GeoLite2 MMDB files on the host, bind-mounted into the container (see [GeoLite2 setup](#geolite2-setup) below).
 
 ### Configuration (environment variables)
 
@@ -87,6 +87,7 @@ Image=ghcr.io/pdostal/cptv:latest
 ContainerName=cptv
 Network=cptv
 PublishPort=127.0.0.1:8000:8000
+Volume=%h/.local/share/cptv/geolite2:/app/vendor/geolite2:ro,z
 Environment=CPTV_VALKEY_HOST=cptv-valkey
 Environment=CPTV_VALKEY_PORT=6379
 AutoUpdate=registry
@@ -263,30 +264,80 @@ The app defaults to `localhost:6379` and will connect automatically. Stop it wit
 
 ### Building the container image
 
-You first need the GeoLite2 databases on disk:
-
 ```sh
-export MAXMIND_LICENSE_KEY=...     # from https://www.maxmind.com/en/geolite2/signup
-scripts/download-geolite2.sh       # writes vendor/geolite2/*.mmdb
-
 podman build -f Containerfile -t cptv:dev .
 ```
 
-## MaxMind setup (one-time)
+GeoLite2 databases are **not** included in the image — mount them at runtime (see below).
+
+## GeoLite2 setup
+
+The MaxMind EULA prohibits redistributing GeoLite2 databases, so the container image ships without them. You download the databases to the host and bind-mount them into the container. A systemd timer keeps them fresh (MaxMind requires updates at least every 30 days).
+
+### 1. Sign up and get a license key
 
 1. Sign up at <https://www.maxmind.com/en/geolite2/signup>.
 2. Generate a license key in the account portal.
-3. For local builds: `export MAXMIND_LICENSE_KEY=...` and run `scripts/download-geolite2.sh`.
-4. For CI: add the key as the GitHub Actions repository secret `MAXMIND_LICENSE_KEY`. The `release.yml` and `geolite2-refresh.yml` workflows use it to fetch fresh DBs at image build time.
 
-MaxMind terms require GeoLite2 databases to be refreshed at least every 30 days. The `geolite2-refresh.yml` workflow runs weekly to keep the published image current.
+### 2. Initial download
+
+```sh
+export MAXMIND_LICENSE_KEY=...     # your key
+scripts/download-geolite2.sh       # writes ~/.local/share/cptv/geolite2/*.mmdb
+```
+
+Or download manually and place `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb` in `~/.local/share/cptv/geolite2/`.
+
+### 3. Systemd timer for weekly refresh
+
+Create `~/.config/systemd/user/cptv-geolite2-refresh.service`:
+
+```ini
+[Unit]
+Description=Refresh GeoLite2 databases for cptv
+
+[Service]
+Type=oneshot
+Environment=MAXMIND_LICENSE_KEY=<your-key-here>
+ExecStart=%h/.local/bin/cptv-download-geolite2.sh
+```
+
+Create `~/.config/systemd/user/cptv-geolite2-refresh.timer`:
+
+```ini
+[Unit]
+Description=Weekly GeoLite2 refresh for cptv
+
+[Timer]
+OnCalendar=Mon *-*-* 05:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Copy the download script and enable the timer:
+
+```sh
+mkdir -p ~/.local/bin
+cp scripts/download-geolite2.sh ~/.local/bin/cptv-download-geolite2.sh
+chmod +x ~/.local/bin/cptv-download-geolite2.sh
+
+systemctl --user daemon-reload
+systemctl --user enable --now cptv-geolite2-refresh.timer
+```
+
+After a GeoLite2 refresh, restart the app container to pick up the new databases:
+
+```sh
+systemctl --user restart cptv.service
+```
 
 ## Publishing
 
-- **`release.yml`** — fires on `v*` tag push (or manual `workflow_dispatch` with a tag). Downloads fresh GeoLite2 DBs, builds `linux/amd64` + `linux/arm64` image, pushes `latest` / `<version>` / `<version>-<yyyymmdd>` tags to GHCR, with provenance attestations and SBOM.
-- **`geolite2-refresh.yml`** — fires weekly on Monday. Rebuilds `latest` and a dated `geolite2-<yyyymmdd>` tag. Also callable from other workflows.
+- **`release.yml`** — fires on `v*` tag push (or manual `workflow_dispatch`). Builds `linux/amd64` + `linux/arm64` image, pushes `latest` / `<version>` tags to GHCR with provenance attestations and SBOM, then creates a GitHub Release with auto-generated notes.
 
-Both require the `MAXMIND_LICENSE_KEY` repository secret. `GITHUB_TOKEN` is scoped to `packages: write` only.
+`GITHUB_TOKEN` is scoped to `contents: write` + `packages: write` only. No `MAXMIND_LICENSE_KEY` is needed — GeoLite2 databases are not in the image.
 
 ## Security + quality scanning
 

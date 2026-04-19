@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Download MaxMind GeoLite2 City + ASN databases into ./vendor/geolite2/.
-# Used by local builds and by CI (release.yml, geolite2-refresh.yml).
+# Download MaxMind GeoLite2 City + ASN databases.
+# Default output: ~/.local/share/cptv/geolite2/ (override with GEOLITE2_DIR).
 #
 # Requires: MAXMIND_LICENSE_KEY env var (https://www.maxmind.com/en/geolite2/signup).
-# Produces: vendor/geolite2/GeoLite2-City.mmdb, vendor/geolite2/GeoLite2-ASN.mmdb.
+# Produces: GeoLite2-City.mmdb, GeoLite2-ASN.mmdb in the output directory.
 
 set -euo pipefail
 
@@ -13,8 +13,7 @@ if [[ -z "${MAXMIND_LICENSE_KEY:-}" ]]; then
   exit 1
 fi
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-out_dir="${repo_root}/vendor/geolite2"
+out_dir="${GEOLITE2_DIR:-${HOME}/.local/share/cptv/geolite2}"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
 

@@ -45,9 +45,9 @@ COPY --from=assets /build/cptv/static /app/cptv/static
 COPY cptv/ /app/cptv/
 COPY pyproject.toml /app/pyproject.toml
 
-# GeoLite2 databases downloaded by CI before `podman build` and placed in vendor/geolite2/.
-# Local builds can run scripts/download-geolite2.sh first.
-COPY vendor/geolite2/ /app/vendor/geolite2/
+# GeoLite2 databases are NOT baked into the image (MaxMind EULA prohibits
+# redistribution in public images). Mount them at runtime via a volume —
+# see README.md for the systemd timer that keeps them fresh.
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \

@@ -37,23 +37,23 @@ Run all from the repository root.
 - JS install/build: `npm install` then `npm run build`
 - Dev server: `uv run uvicorn cptv.main:app --reload`
 - Dev Valkey: `podman run --rm -d --name cptv-valkey -p 6379:6379 docker.io/valkey/valkey:8-alpine`
-- GeoLite2 download: `scripts/download-geolite2.sh` (needs `MAXMIND_LICENSE_KEY`)
+- GeoLite2 download: `scripts/download-geolite2.sh` (needs `MAXMIND_LICENSE_KEY`; writes to `~/.local/share/cptv/geolite2/` by default)
 - Local image build: `podman build -f Containerfile -t cptv:dev .`
 
 ### Releasing
 
 - Tag a release: `git tag v1.0.0 && git push origin v1.0.0`
-- `release.yml` fires on `v*` tag push, downloads fresh GeoLite2 DBs, builds `linux/amd64` + `linux/arm64`, pushes to `ghcr.io/pdostal/cptv` with `latest` / `<version>` / `<version>-<yyyymmdd>` tags.
-- `geolite2-refresh.yml` fires weekly (Monday) to rebuild `latest` with fresh MaxMind data.
-- Both need the `MAXMIND_LICENSE_KEY` repository secret.
+- `release.yml` fires on `v*` tag push, builds `linux/amd64` + `linux/arm64`, pushes to `ghcr.io/pdostal/cptv` with `latest` / `<version>` tags, then creates a GitHub Release with auto-generated notes.
+- GeoLite2 databases are NOT in the image (MaxMind EULA). They are bind-mounted from the host at runtime.
+- `MAXMIND_LICENSE_KEY` is no longer needed as a CI secret.
 
 ## Build / Deploy Gotchas
 
-- Container images are built with `podman` (Containerfile, not Dockerfile). CI uses `podman build`.
-- The container expects GeoLite2 MMDBs at `vendor/geolite2/` during build; the image bakes them into `/app/vendor/geolite2/`.
+- Container images are built with `podman` (Containerfile, not Dockerfile). CI uses `docker/build-push-action` with buildx.
+- GeoLite2 MMDBs are NOT in the image. They are bind-mounted from the host at `/app/vendor/geolite2/`.
 - `mtr-packet` needs `cap_net_raw` set in the image; do not assume the runtime container or Quadlet needs extra capability flags.
 - `CPTV_QUICK_LINKS` is a JSON array env var; unset or empty hides the section.
-- `CPTV_GEOIP_CITY_DB` and `CPTV_GEOIP_ASN_DB` point to the baked-in MMDB paths by default.
+- `CPTV_GEOIP_CITY_DB` and `CPTV_GEOIP_ASN_DB` default to `/app/vendor/geolite2/` paths; the DBs must be bind-mounted.
 - `CPTV_VALKEY_HOST` and `CPTV_VALKEY_PORT` configure the Valkey connection (defaults: `localhost:6379`).
 - There are no standalone config files in the repo root; app behavior is meant to come from env vars and the documented build/runtime flow.
 - Production deployment uses Podman Quadlet units (see `README.md`): `cptv.container` + `cptv-valkey.container` on a shared Podman network, with `AutoUpdate=registry` for `podman auto-update`.

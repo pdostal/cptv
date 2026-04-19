@@ -17,7 +17,7 @@ What currently exists:
 - `package.json` with HTMX + Pico CSS + ESLint (+ `eslint-plugin-security`), flat `eslint.config.js`.
 - `Containerfile` (multi-stage: npm asset build -> uv sync -> runtime with `mtr-tiny` + `cap_net_raw`).
 - `scripts/download-geolite2.sh`, `scripts/build-assets.mjs`.
-- `.github/workflows/`: `lint.yml`, `test.yml` (pytest with Valkey service container + Lighthouse CI), `security.yml` (pip-audit, npm audit, bandit, eslint-security, trivy), `scorecard.yml`, `release.yml`, `geolite2-refresh.yml`.
+- `.github/workflows/`: `lint.yml`, `test.yml` (pytest with Valkey service container + Lighthouse CI), `security.yml` (pip-audit, npm audit, bandit, eslint-security, trivy), `scorecard.yml`, `release.yml`.
 - `.github/dependabot.yml` for pip / npm / GitHub Actions / docker.
 - 106 tests passing: unit tests per service, integration tests for every endpoint / content-negotiation combination, traceroute cache/rate-limit tests.
 
@@ -61,18 +61,18 @@ The app defaults to `CPTV_VALKEY_HOST=localhost` and `CPTV_VALKEY_PORT=6379`. Wi
 ### Building the container image
 
 ```sh
-export MAXMIND_LICENSE_KEY=...         # from https://www.maxmind.com/en/geolite2/signup
-scripts/download-geolite2.sh           # writes vendor/geolite2/*.mmdb
 podman build -f Containerfile -t cptv:dev .
 ```
+
+GeoLite2 databases are not included in the image. Mount them at runtime — see `README.md` for the systemd timer setup.
 
 ## Releasing
 
 Container images are published to **`ghcr.io/pdostal/cptv`** only — no PyPI, no standalone binaries. Images are built with `podman`.
 
-- **`release.yml`** — fires on `v*` tag push (or `workflow_dispatch` with a tag input). Downloads fresh GeoLite2 DBs via `MAXMIND_LICENSE_KEY`, builds for `linux/amd64` + `linux/arm64`, pushes `latest`, `<version>`, and `<version>-<yyyymmdd>` tags, with provenance + SBOM.
-- **`geolite2-refresh.yml`** — fires weekly (Monday) and can be `workflow_dispatch`ed or `workflow_call`ed. Rebuilds `latest` and a `geolite2-<yyyymmdd>` tag with fresh MaxMind data.
-- Both workflows require the repository secret `MAXMIND_LICENSE_KEY` and use `GITHUB_TOKEN` scoped to `packages: write`.
+- **`release.yml`** — fires on `v*` tag push (or `workflow_dispatch`). Builds for `linux/amd64` + `linux/arm64`, pushes `latest` and `<version>` tags, with provenance + SBOM. Then creates a GitHub Release with auto-generated notes.
+- GeoLite2 databases are **not** baked into the image (MaxMind EULA prohibits redistribution). They are bind-mounted at runtime from the host.
+- The repository secret `MAXMIND_LICENSE_KEY` is no longer needed by CI.
 
 To cut a release:
 
@@ -106,8 +106,7 @@ These are decisions from `PLAN.md` that are easy to accidentally break. Read the
 | `test.yml`             | push + PR            | Valkey service container + `pytest -q`; Lighthouse CI (accessibility >= 0.90)  |
 | `security.yml`         | push + PR            | `pip-audit`, `npm audit`, `bandit`, `eslint`, `trivy`                          |
 | `scorecard.yml`        | weekly + push master | OSSF Scorecard posture report                                                  |
-| `release.yml`          | `v*` tag push        | GeoLite2 download, multi-arch `podman build`, push to GHCR                     |
-| `geolite2-refresh.yml` | weekly (Monday)      | Rebuild `latest` with fresh MaxMind data                                       |
+| `release.yml`          | `v*` tag push        | Multi-arch build, push to GHCR, create GitHub Release                          |
 
 ## Known divergences from `PLAN.md`
 
@@ -115,7 +114,7 @@ Minor implementation details that deviate from the plan doc but were chosen deli
 
 - ESLint uses flat config (`eslint.config.js`) instead of `.eslintrc.json`. Flat config is the default in ESLint 9+ and `.eslintrc*` is deprecated.
 - Vendored JS/CSS assets live under `cptv/static/vendor/` (not `cptv/static/` directly) so app-authored static files and vendored ones don't collide.
-- GeoLite2 MMDBs are staged at `vendor/geolite2/` at build time and baked into the image at `/app/vendor/geolite2/`. Env vars `CPTV_GEOIP_CITY_DB` / `CPTV_GEOIP_ASN_DB` point to them — don't hardcode paths.
+- GeoLite2 MMDBs are **not** in the container image. They are bind-mounted from the host at `/app/vendor/geolite2/`. Env vars `CPTV_GEOIP_CITY_DB` / `CPTV_GEOIP_ASN_DB` point to them — don't hardcode paths.
 - The `redis` Python package is used as the Valkey protocol client (Valkey is wire-compatible). The service module is `cptv/services/valkey.py`.
 
 ## Non-goals
