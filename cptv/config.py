@@ -36,6 +36,26 @@ class Settings(BaseSettings):
         default="/app/vendor/geolite2/GeoLite2-ASN.mmdb",
         description="Path to the GeoLite2 ASN MMDB. Missing file disables ASN gracefully.",
     )
+    mtr_path: str = Field(
+        default="mtr",
+        description="Path to the mtr binary.",
+    )
+    mtr_count: int = Field(
+        default=5,
+        description="Number of ICMP probes per hop (-c flag).",
+    )
+    valkey_host: str = Field(
+        default="localhost",
+        description="Valkey server hostname.",
+    )
+    valkey_port: int = Field(
+        default=6379,
+        description="Valkey server port.",
+    )
+    traceroute_cache_ttl: int = Field(
+        default=3600,
+        description="Traceroute cache TTL in seconds (default 1 hour).",
+    )
 
     @property
     def quick_links(self) -> list[QuickLink]:

@@ -1,6 +1,6 @@
 [project]
 name = "cptv"
-version = "0.0.1"
+version = "0.0.2"
 description = "CaPTiVe — self-hosted network diagnostics tool (see PLAN.md)."
 requires-python = ">=3.12"
 dependencies = [
@@ -9,6 +9,7 @@ dependencies = [
     "jinja2>=3.1",
     "pydantic-settings>=2.5",
     "uvicorn[standard]>=0.30",
+    "redis[hiredis]>=5.0",
 ]
 
 [dependency-groups]

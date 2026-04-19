@@ -12,6 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    services:
+      valkey:
+        image: docker.io/valkey/valkey:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      CPTV_VALKEY_HOST: localhost
+      CPTV_VALKEY_PORT: 6379
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: astral-sh/setup-uv@v8.1.0
@@ -44,12 +57,17 @@ jobs:
           uv run uvicorn cptv.main:app --host 127.0.0.1 --port 8000 &
           echo $! > .app.pid
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8000/health > /dev/null; then
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null 2>&1; then
+              exit 0
+            fi
+            # Accept degraded (no Valkey) — Lighthouse only needs HTTP.
+            status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health || true)
+            if [[ "$status" == "503" ]]; then
               exit 0
             fi
             sleep 1
           done
-          echo "app failed to become healthy" >&2
+          echo "app failed to start" >&2
           exit 1
       - name: Run Lighthouse CI
         run: npx --yes @lhci/cli@0.14.x autorun --config=./lighthouserc.json
