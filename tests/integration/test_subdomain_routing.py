@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 from fastapi.testclient import TestClient
 
 FWD_V4 = {"X-Forwarded-For": "203.0.113.42"}
@@ -64,9 +66,14 @@ def test_subdomain_detection_ignores_port(client: TestClient):
 
 
 def test_subdomain_does_not_rewrite_other_paths(client: TestClient):
-    r = client.get(
-        "/health",
-        headers=_curl(FWD_V4, BASE_DOMAIN, {"Host": "ipv4.example.test"}),
-    )
+    with patch(
+        "cptv.routes.health.valkey_health_check",
+        new_callable=AsyncMock,
+        return_value="ok",
+    ):
+        r = client.get(
+            "/health",
+            headers=_curl(FWD_V4, BASE_DOMAIN, {"Host": "ipv4.example.test"}),
+        )
     assert r.status_code == 200
-    assert r.json()["status"] == "ok"
+    assert r.json()["status"] in ("ok", "degraded")

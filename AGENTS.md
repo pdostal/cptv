@@ -12,38 +12,60 @@
 - Do not hardcode a domain name; the base domain comes from the `X-Base-Domain` nginx header at request time.
 - Plain HTTP on the apex domain is intentional; only `secure.<domain>` enforces TLS.
 - Every endpoint must support HTML, JSON, and plain text negotiation.
-- Keep the server stateless; Redis is for traceroute cache and rate limiting only.
+- Keep the server stateless; Valkey is for traceroute cache and rate limiting only.
 - Do not add user accounts, cookies, session IDs, fingerprinting, or user-agent logging.
 - Keep the HTMX + Pico CSS stack; do not introduce a heavy frontend framework.
 
 ## Verified Commands
 
-- Python setup and tests: `uv sync --dev --frozen` then `uv run pytest`
-- Python lint/format: `uv run ruff check .` and `uv run ruff format --check .`
+Run all from the repository root.
+
+### Pre-commit checks (run these before committing)
+
+- Python lint: `uv run ruff check .`
+- Python format: `uv run ruff format --check .`
 - Python security scan: `uv run bandit -c pyproject.toml -r cptv/ -ll`
-- JS install/build: `npm install` then `npm run build`
+- Python tests: `uv run pytest -q`
 - JS lint: `npx eslint .`
+- JS dep audit: `npm audit --audit-level=high`
+- Python dep audit: `uv export --frozen --no-dev --no-emit-project | uvx pip-audit --requirement /dev/stdin --strict`
+
+### Setup / build
+
+- Python setup: `uv sync --dev --frozen`
+- JS install/build: `npm install` then `npm run build`
 - Dev server: `uv run uvicorn cptv.main:app --reload`
+- Dev Valkey: `podman run --rm -d --name cptv-valkey -p 6379:6379 docker.io/valkey/valkey:8-alpine`
+- GeoLite2 download: `scripts/download-geolite2.sh` (needs `MAXMIND_LICENSE_KEY`)
 - Local image build: `podman build -f Containerfile -t cptv:dev .`
-- GeoLite2 download: `scripts/download-geolite2.sh` with `MAXMIND_LICENSE_KEY`
+
+### Releasing
+
+- Tag a release: `git tag v1.0.0 && git push origin v1.0.0`
+- `release.yml` fires on `v*` tag push, downloads fresh GeoLite2 DBs, builds `linux/amd64` + `linux/arm64`, pushes to `ghcr.io/pdostal/cptv` with `latest` / `<version>` / `<version>-<yyyymmdd>` tags.
+- `geolite2-refresh.yml` fires weekly (Monday) to rebuild `latest` with fresh MaxMind data.
+- Both need the `MAXMIND_LICENSE_KEY` repository secret.
 
 ## Build / Deploy Gotchas
 
+- Container images are built with `podman` (Containerfile, not Dockerfile). CI uses `podman build`.
 - The container expects GeoLite2 MMDBs at `vendor/geolite2/` during build; the image bakes them into `/app/vendor/geolite2/`.
 - `mtr-packet` needs `cap_net_raw` set in the image; do not assume the runtime container or Quadlet needs extra capability flags.
 - `CPTV_QUICK_LINKS` is a JSON array env var; unset or empty hides the section.
 - `CPTV_GEOIP_CITY_DB` and `CPTV_GEOIP_ASN_DB` point to the baked-in MMDB paths by default.
+- `CPTV_VALKEY_HOST` and `CPTV_VALKEY_PORT` configure the Valkey connection (defaults: `localhost:6379`).
 - There are no standalone config files in the repo root; app behavior is meant to come from env vars and the documented build/runtime flow.
+- Production deployment uses Podman Quadlet units (see `README.md`): `cptv.container` + `cptv-valkey.container` on a shared Podman network, with `AutoUpdate=registry` for `podman auto-update`.
 
 ## CI Facts Worth Matching
 
 - `lint.yml` runs `ruff check .` and `ruff format --check .`.
-- `test.yml` runs `pytest -q`, then starts the app and runs Lighthouse CI.
+- `test.yml` spins up a Valkey service container (`valkey/valkey:8-alpine`), runs `pytest -q`, then starts the app and runs Lighthouse CI.
 - `security.yml` runs `pip-audit`, `npm audit --audit-level=high`, `bandit`, `eslint`, and `trivy`.
 - Workflow permissions are locked down with `permissions: {}` at the top; security jobs have no repo secrets.
 
 ## Current Gaps
 
-- Traceroute + Redis integration is still the main unfinished area.
-- `/health` is still a shallow check.
+- HTMX streaming for live traceroute progress is not yet implemented.
 - Server-side DNS resolver detection is not implemented yet.
+- Session history (`localStorage` schema) is not wired up in the UI.

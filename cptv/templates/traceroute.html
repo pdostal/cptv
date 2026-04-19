@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}
+    cptv — Traceroute
+{% endblock title %}
+{%
+block content %}
+<article>
+    <header>
+        <strong>🗺️ Traceroute</strong>
+    </header>
+    {% if result.nat_warning %}
+        <p>
+            <mark>⚠️ {{ result.nat_warning }}</mark>
+        </p>
+    {% endif %}
+    <p>
+        Target: <code>{{ result.target }}</code>
+        <br />
+        Ran at: <time datetime="{{ result.ran_at }}">{{ result.ran_at }}</time>
+        {% if result.cached %}
+            <small>🕐 Cached</small>
+        {% else %}
+            <small>⚡ Live result</small>
+        {% endif %}
+    </p>
+    <figure>
+        <table role="grid">
+            <thead>
+                <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">IP</th>
+                    <th scope="col">Hostname</th>
+                    <th scope="col">ASN</th>
+                    <th scope="col">Loss</th>
+                    <th scope="col">Avg</th>
+                    <th scope="col">Best</th>
+                    <th scope="col">Worst</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for hop in result.hops %}
+                    {% if hop.ip %}
+                        <tr>
+                            <td>{{ hop.hop }}</td>
+                            <td>
+                                <code>{{ hop.ip }}</code>
+                            </td>
+                            <td>{{ hop.rdns or "—" }}</td>
+                            <td>
+                                {% if hop.asn %}
+                                    AS{{ hop.asn }}
+                                    {% if hop.asn_name %}<small>{{ hop.asn_name }}</small>{% endif %}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td>{{ "%.1f"|format(hop.loss_pct) }}%</td>
+                            <td>
+                                {% if hop.avg_ms is not none %}
+                                    {{ "%.1f"|format(hop.avg_ms) }}ms {%
+                                    else %} —
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if hop.best_ms is not none %}
+                                    {{ "%.1f"|format(hop.best_ms) }}ms
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if hop.worst_ms is not none %}
+                                    {{ "%.1f"|format(hop.worst_ms) }}ms
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% if hop.mpls %}
+                            {% for m in hop.mpls %}
+                                <tr>
+                                    <td></td>
+                                    <td colspan="7">
+                                        <small>MPLS: {{ m.label }}/{{ m.tc }}/{{ m.s }}</small>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% endif %}
+                    {% else %}
+                        <tr>
+                            <td>{{ hop.hop }}</td>
+                            <td colspan="7">
+                                <code>* * *</code>
+                            </td>
+                        </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </figure>
+    <p>
+        <a href="/">← back</a>
+    </p>
+</article>
+{% endblock content %}
