@@ -81,9 +81,12 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: tamasfe/taplo-action@0.4.6
-        with:
-          arguments: check
+      - name: Install taplo
+        run: |
+          curl -fsSL https://github.com/tamasfe/taplo/releases/latest/download/taplo-full-linux-x86_64.gz \
+            | gunzip > /usr/local/bin/taplo
+          chmod +x /usr/local/bin/taplo
+      - run: taplo check
 
   markdownlint:
     name: markdownlint (Markdown)
