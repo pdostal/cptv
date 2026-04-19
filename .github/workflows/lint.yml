@@ -81,11 +81,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6.0.2
-      - name: Install taplo
-        run: |
-          curl -fsSL https://github.com/tamasfe/taplo/releases/latest/download/taplo-full-linux-x86_64.gz \
-            | gunzip > /usr/local/bin/taplo
-          chmod +x /usr/local/bin/taplo
+      - uses: uncenter/setup-taplo@v2
       - run: taplo check
 
   markdownlint:
