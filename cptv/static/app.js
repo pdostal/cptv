@@ -658,7 +658,11 @@
   }
 
   // ---------- session history (localStorage, never sent to server) ----------
-  const HISTORY_KEY = "cptv:history:v1";
+  // v2 schema:
+  //   { ip, protocol, asn_number, asn_name, city, first_seen, last_seen, count }
+  // The v2 storage key is separate from v1 so we don't have to migrate
+  // partial entries; old data coexists harmlessly until the user clears.
+  const HISTORY_KEY = "cptv:history:v2";
 
   function readHistory() {
     try {
@@ -679,7 +683,10 @@
     }
   }
 
-  function recordSeen(ip, protocol) {
+  // Record (or update) an IP, merging new fields onto the existing entry
+  // when present. Empty / placeholder values are ignored so a transient
+  // '…' from the dual-stack probe never overwrites a real IP.
+  function recordSeen(ip, protocol, extras = {}) {
     if (!ip || ip === "…" || ip === "—" || ip === "unknown") return null;
     const now = new Date().toISOString();
     const entries = readHistory();
@@ -688,10 +695,17 @@
       existing.last_seen = now;
       existing.count = (existing.count || 1) + 1;
       if (protocol && !existing.protocol) existing.protocol = protocol;
+      // Always overwrite enrichment fields with the freshest data.
+      if (extras.asn_number != null) existing.asn_number = extras.asn_number;
+      if (extras.asn_name) existing.asn_name = extras.asn_name;
+      if (extras.city) existing.city = extras.city;
     } else {
       entries.push({
         ip,
         protocol: protocol || null,
+        asn_number: extras.asn_number ?? null,
+        asn_name: extras.asn_name ?? null,
+        city: extras.city ?? null,
         first_seen: now,
         last_seen: now,
         count: 1,
@@ -705,10 +719,12 @@
     const list = qs("#ip-history");
     if (!list) return;
     const entries = readHistory();
-    list.innerHTML = "";
+    list.replaceChildren();
     if (entries.length === 0) {
       const empty = document.createElement("li");
-      empty.innerHTML = "<small>No history yet.</small>";
+      const small = document.createElement("small");
+      small.textContent = "No history yet.";
+      empty.appendChild(small);
       list.appendChild(empty);
       return;
     }
@@ -718,17 +734,26 @@
     );
     for (const entry of sorted) {
       const li = document.createElement("li");
-      // Build with text nodes / setAttribute so localStorage content can never
-      // be reinterpreted as HTML (CodeQL js/xss-through-dom).
+      // Build via DOM API so cached localStorage values are never
+      // reinterpreted as HTML (CodeQL js/xss-through-dom).
       const code = document.createElement("code");
       code.textContent = String(entry.ip || "");
-      const small = document.createElement("small");
-      const proto = entry.protocol ? ` (${entry.protocol})` : "";
-      const seenN = entry.count > 1 ? ` · seen ${entry.count}\u00d7` : "";
-      const last = entry.last_seen ? String(entry.last_seen).replace("T", " ") : "?";
-      small.textContent = `${proto}${seenN} · last ${last}`;
       li.appendChild(code);
-      li.appendChild(document.createTextNode(" "));
+
+      const small = document.createElement("small");
+      const bits = [];
+      if (entry.protocol) bits.push(entry.protocol);
+      if (entry.asn_number != null) {
+        const asnLabel = entry.asn_name
+          ? `AS${entry.asn_number} ${entry.asn_name}`
+          : `AS${entry.asn_number}`;
+        bits.push(asnLabel);
+      }
+      if (entry.city) bits.push(entry.city);
+      if (entry.count > 1) bits.push(`seen ${entry.count}\u00d7`);
+      const last = entry.last_seen ? String(entry.last_seen).replace("T", " ") : "?";
+      bits.push(`last ${last}`);
+      small.textContent = ` \u2014 ${bits.join(" \u00b7 ")}`;
       li.appendChild(small);
       list.appendChild(li);
     }
@@ -747,26 +772,41 @@
     });
   }
 
-  function trackHistory() {
+  // Pull the per-stack ASN/city info that enrichDualStackInfo() fetched
+  // and stamp it onto the matching entry. Falls through gracefully when
+  // the enrichment is missing (offline, CORS-blocked, etc.).
+  function extrasFor(stack, enriched) {
+    if (!enriched) return {};
+    const a = enriched.asn?.[stack];
+    const g = enriched.geo?.[stack];
+    return {
+      asn_number: a?.asn ?? null,
+      asn_name: a?.name ?? null,
+      city: g?.city ?? null,
+    };
+  }
+
+  function trackHistory(enriched) {
     // Pull current IP / protocol off the page (already rendered server-side).
     const currentEl = qs(".ip-current");
     const dualEl = qs("#dual-stack");
     const currentIp = currentEl ? currentEl.textContent.trim() : null;
     const protocol = dualEl ? dualEl.dataset.protocol || null : null;
-    if (currentIp) recordSeen(currentIp, protocol);
+    if (currentIp) {
+      const stack = protocol === "IPv6" ? "ipv6" : protocol === "IPv4" ? "ipv4" : null;
+      recordSeen(currentIp, protocol, stack ? extrasFor(stack, enriched) : {});
+    }
 
-    // Also record any other-stack IP discovered by the dual-stack probe.
-    // Re-render history when the probe updates the DOM.
-    renderHistory();
+    // Record any other-stack IP discovered by the dual-stack probe and
+    // tag it with that stack's enrichment data.
     document.querySelectorAll("[data-ds]").forEach((el) => {
-      const observer = new MutationObserver(() => {
-        const stack = el.dataset.ds;
-        const ip = el.textContent.trim();
-        const proto = stack === "ipv4" ? "IPv4" : stack === "ipv6" ? "IPv6" : null;
-        if (recordSeen(ip, proto)) renderHistory();
-      });
-      observer.observe(el, { childList: true, characterData: true, subtree: true });
+      const stack = el.dataset.ds;
+      const ip = el.textContent.trim();
+      const proto = stack === "ipv4" ? "IPv4" : stack === "ipv6" ? "IPv6" : null;
+      recordSeen(ip, proto, extrasFor(stack, enriched));
     });
+
+    renderHistory();
   }
 
   // ---------- browser geolocation (opt-in) ----------

@@ -245,8 +245,8 @@ needs raw sockets to receive ICMP time-exceeded replies.
 
 ### 4.9 Session History 📋
 
-- Every IP observed (current address plus dual-stack probe results) stored in **browser `localStorage`** under the key `cptv:history:v1`
-- Each entry records `{ ip, protocol, first_seen, last_seen, count }`
+- Every IP observed (current address plus dual-stack probe results) stored in **browser `localStorage`** under the key `cptv:history:v2`
+- Each entry records `{ ip, protocol, asn_number, asn_name, city, first_seen, last_seen, count }`. ASN and city come from a fresh fetch of `/asn` and `/geoip` on each visit (never from cached server-side data) so the displayed values never go stale.
 - Rendered most-recent-first on the home page; a "Clear history" button wipes the entry
 - Server stores nothing — the privacy footer reiterates this
 
@@ -986,7 +986,7 @@ This statement is displayed at the bottom of every HTML page and included in the
 
 ### What stays in your browser
 
-- **Connection history** (IPv4/IPv6 addresses from previous visits, with first/last seen timestamps) is stored exclusively in **your browser's `localStorage`** under the key `cptv:history:v1` — it never leaves your device and is never sent to the server. A **Clear history** button on the home page wipes it.
+- **Connection history** (IPv4/IPv6 addresses from previous visits, with first/last seen timestamps, ASN, and city) is stored exclusively in **your browser's `localStorage`** under the key `cptv:history:v2` — it never leaves your device and is never sent to the server. A **Clear history** button on the home page wipes it.
 - **Geolocation** (if you opt in via the "Show my real location" button) is used only to display your position on the map in your browser — the coordinates are never transmitted to the server
 - **DNSSEC test** results are determined entirely client-side by your browser loading an image — no result is reported back to the server
 - **Anycast PoP probe** to `https://1.1.1.1/cdn-cgi/trace` happens directly from your browser — the response is parsed in JavaScript and never seen by us
