@@ -69,3 +69,19 @@ def respond(
         return templates.TemplateResponse(request, html_template, context)  # type: ignore[arg-type, union-attr]
 
     return HTMLResponse("", status_code=204)
+
+
+def add_public_cors(response: Response) -> Response:
+    """Mark a response as safe for cross-origin reads from anywhere.
+
+    Used by the IP echo endpoints (/ip, /ipv4, /ipv6 and aliases) so the
+    home page's dual-stack probe — which runs at ``cptv.cz`` and fetches
+    ``ipv4.cptv.cz`` / ``ipv6.cptv.cz`` — can actually read the body.
+
+    These endpoints are public, idempotent, contain no secrets, and
+    accept no credentials, so wildcard CORS is safe. We deliberately
+    do NOT apply this globally; other endpoints stay browser-same-origin.
+    """
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Cache-Control"] = "no-store"
+    return response

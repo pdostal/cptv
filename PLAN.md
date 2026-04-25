@@ -91,6 +91,7 @@ proxy_set_header X-Forwarded-Proto $scheme;
 - Clearly indicate which protocol is active and which is preferred
 - Link to the forcing subdomains so users can test each protocol explicitly
 - The `ipv4.<domain>` and `ipv6.<domain>` subdomains also behave as dedicated single-purpose endpoints — when curled they return just the raw IP address in plain text, useful for scripting
+- The IP echo endpoints (`/ip`, `/ipv4`, `/ip4`, `/4`, `/ipv6`, `/ip6`, `/6` and their `/api/v1/` variants) emit `Access-Control-Allow-Origin: *` and `Cache-Control: no-store` so the home page's cross-origin dual-stack probe can read the body. CORS is **not** enabled on other endpoints.
 
 ### 4.2 Geolocation 🌍
 
