@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from cptv.negotiation import respond
 from cptv.services import ip as ip_service
 from cptv.services.traceroute import (
+    TracerouteBusyError,
     TracerouteError,
     TracerouteRateLimitedError,
     format_json,
@@ -64,6 +65,13 @@ def _register(templates: Jinja2Templates) -> APIRouter:
                 templates,
                 "Traceroute already in progress for this IP. Please try again shortly.",
                 status_code=429,
+            )
+        except TracerouteBusyError:
+            return _error_response(
+                request,
+                templates,
+                "Server is running too many traceroutes right now. Please try again shortly.",
+                status_code=503,
             )
         except TracerouteError:
             log.exception("traceroute failed for %s", address)

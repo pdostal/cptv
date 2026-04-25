@@ -61,6 +61,23 @@ class Settings(BaseSettings):
         default=3600,
         description="Traceroute cache TTL in seconds (default 1 hour).",
     )
+    traceroute_max_concurrency: int = Field(
+        default=4,
+        ge=1,
+        description=(
+            "Process-wide cap on concurrent mtr subprocesses. "
+            "Protects the host even when Valkey rate limiting is bypassed "
+            "(many distinct client IPs)."
+        ),
+    )
+    traceroute_concurrency_wait_seconds: float = Field(
+        default=2.0,
+        ge=0.0,
+        description=(
+            "How long to wait for a global traceroute slot before returning "
+            "503-equivalent. Shorter values fail-fast under heavy load."
+        ),
+    )
 
     @property
     def quick_links(self) -> list[QuickLink]:

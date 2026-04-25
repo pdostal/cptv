@@ -9,6 +9,7 @@ from cptv.services.traceroute import (
     CachedMeta,
     Hop,
     StreamEvent,
+    TracerouteBusyError,
     TracerouteError,
     TracerouteRateLimitedError,
     TracerouteResult,
@@ -82,6 +83,14 @@ def _patch_mtr_rate_limited():
         "cptv.routes.traceroute.run_mtr_cached",
         new_callable=AsyncMock,
         side_effect=TracerouteRateLimitedError("already in progress"),
+    )
+
+
+def _patch_mtr_busy():
+    return patch(
+        "cptv.routes.traceroute.run_mtr_cached",
+        new_callable=AsyncMock,
+        side_effect=TracerouteBusyError("server busy"),
     )
 
 
@@ -278,3 +287,10 @@ class TestTracerouteErrors:
         assert r.status_code == 429
         data = r.json()
         assert "error" in data
+
+    def test_global_busy_returns_503(self, client: TestClient):
+        with _patch_mtr_busy():
+            r = client.get("/traceroute.json", headers=V4)
+        assert r.status_code == 503
+        data = r.json()
+        assert "too many" in data["error"].lower()

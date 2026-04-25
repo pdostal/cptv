@@ -64,6 +64,32 @@ class TracerouteError(Exception):
     """Raised when mtr execution fails."""
 
 
+class TracerouteBusyError(Exception):
+    """Raised when the global concurrency cap is saturated and the wait timed out."""
+
+
+# Lazily-initialised process-wide semaphore. Created on first use so the
+# cap value can be read from settings (which may be overridden in tests).
+_global_semaphore: asyncio.Semaphore | None = None
+_global_semaphore_size: int = 0
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _global_semaphore, _global_semaphore_size
+    cap = get_settings().traceroute_max_concurrency
+    if _global_semaphore is None or _global_semaphore_size != cap:
+        _global_semaphore = asyncio.Semaphore(cap)
+        _global_semaphore_size = cap
+    return _global_semaphore
+
+
+def reset_concurrency_cap() -> None:
+    """Drop the cached semaphore. Used by tests after settings overrides."""
+    global _global_semaphore, _global_semaphore_size
+    _global_semaphore = None
+    _global_semaphore_size = 0
+
+
 def _reverse_dns(ip_str: str) -> str | None:
     """Best-effort reverse DNS lookup (PTR)."""
     try:
@@ -140,61 +166,80 @@ async def run_mtr(target: IPAddress) -> TracerouteResult:
 
     Runs ``mtr --json --report --no-dns --mpls -c <count> <target>``
     as a subprocess, then enriches each hop with reverse DNS and ASN data.
+
+    Subject to the process-wide concurrency cap (see ``_get_semaphore``).
+    Raises :class:`TracerouteBusyError` if no slot becomes available before
+    the configured wait window.
     """
     settings = get_settings()
     target_str = str(target)
-    cmd = [
-        settings.mtr_path,
-        "--json",
-        "--report",
-        "--no-dns",
-        "--mpls",
-        "-c",
-        str(settings.mtr_count),
-        target_str,
-    ]
 
-    log.info("running mtr: %s", " ".join(cmd))
-
+    sem = _get_semaphore()
+    wait = settings.traceroute_concurrency_wait_seconds
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_SUBPROCESS_TIMEOUT)
+        await asyncio.wait_for(sem.acquire(), timeout=wait if wait > 0 else None)
     except TimeoutError as exc:
-        msg = f"mtr timed out after {_SUBPROCESS_TIMEOUT}s for {target_str}"
-        raise TracerouteError(msg) from exc
-    except FileNotFoundError as exc:
-        msg = f"mtr binary not found at '{settings.mtr_path}'"
-        raise TracerouteError(msg) from exc
-    except OSError as exc:
-        msg = f"failed to run mtr: {exc}"
-        raise TracerouteError(msg) from exc
-
-    if proc.returncode != 0:
-        err = stderr.decode(errors="replace").strip()
-        msg = f"mtr exited {proc.returncode}: {err}"
-        raise TracerouteError(msg)
+        msg = (
+            f"too many concurrent traceroutes (cap={settings.traceroute_max_concurrency}); "
+            f"waited {wait}s with no slot"
+        )
+        raise TracerouteBusyError(msg) from exc
 
     try:
-        data = json.loads(stdout)
-    except json.JSONDecodeError as exc:
-        msg = "mtr produced invalid JSON"
-        raise TracerouteError(msg) from exc
+        cmd = [
+            settings.mtr_path,
+            "--json",
+            "--report",
+            "--no-dns",
+            "--mpls",
+            "-c",
+            str(settings.mtr_count),
+            target_str,
+        ]
 
-    # mtr JSON structure: { "report": { "hubs": [...] } }
-    hubs = data.get("report", {}).get("hubs", [])
+        log.info("running mtr: %s", " ".join(cmd))
 
-    hops = [_enrich_hop(i + 1, hub) for i, hub in enumerate(hubs[:_MAX_HOPS])]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_SUBPROCESS_TIMEOUT)
+        except TimeoutError as exc:
+            msg = f"mtr timed out after {_SUBPROCESS_TIMEOUT}s for {target_str}"
+            raise TracerouteError(msg) from exc
+        except FileNotFoundError as exc:
+            msg = f"mtr binary not found at '{settings.mtr_path}'"
+            raise TracerouteError(msg) from exc
+        except OSError as exc:
+            msg = f"failed to run mtr: {exc}"
+            raise TracerouteError(msg) from exc
 
-    return TracerouteResult(
-        target=target_str,
-        ran_at=datetime.now(tz=UTC).isoformat(),
-        hops=hops,
-        nat_warning=_nat_warning(target),
-    )
+        if proc.returncode != 0:
+            err = stderr.decode(errors="replace").strip()
+            msg = f"mtr exited {proc.returncode}: {err}"
+            raise TracerouteError(msg)
+
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError as exc:
+            msg = "mtr produced invalid JSON"
+            raise TracerouteError(msg) from exc
+
+        # mtr JSON structure: { "report": { "hubs": [...] } }
+        hubs = data.get("report", {}).get("hubs", [])
+
+        hops = [_enrich_hop(i + 1, hub) for i, hub in enumerate(hubs[:_MAX_HOPS])]
+
+        return TracerouteResult(
+            target=target_str,
+            ran_at=datetime.now(tz=UTC).isoformat(),
+            hops=hops,
+            nat_warning=_nat_warning(target),
+        )
+    finally:
+        sem.release()
 
 
 def cache_key(address: IPAddress) -> str:

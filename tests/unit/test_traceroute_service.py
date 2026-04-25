@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import json
 from unittest.mock import AsyncMock, patch
@@ -9,6 +10,7 @@ import pytest
 from cptv.services.traceroute import (
     Hop,
     MplsLabel,
+    TracerouteBusyError,
     TracerouteError,
     TracerouteRateLimitedError,
     TracerouteResult,
@@ -17,6 +19,7 @@ from cptv.services.traceroute import (
     cache_key,
     format_json,
     format_text,
+    reset_concurrency_cap,
     run_mtr,
     run_mtr_cached,
     stream_mtr_cached,
@@ -339,6 +342,82 @@ class TestRunMtrCached:
         # Should have set lock, cache, and deleted lock
         assert fake_redis.set.call_count == 2  # lock + cache
         fake_redis.delete.assert_called_once()  # lock cleanup
+
+
+class TestConcurrencyCap:
+    @pytest.fixture(autouse=True)
+    def _reset_settings(self, monkeypatch):
+        from cptv import config
+
+        config.get_settings.cache_clear()
+        reset_concurrency_cap()
+        yield
+        config.get_settings.cache_clear()
+        reset_concurrency_cap()
+
+    @pytest.mark.asyncio
+    async def test_busy_when_cap_saturated(self, monkeypatch):
+        from cptv import config
+
+        config.get_settings.cache_clear()
+        monkeypatch.setenv("CPTV_TRACEROUTE_MAX_CONCURRENCY", "1")
+        monkeypatch.setenv("CPTV_TRACEROUTE_CONCURRENCY_WAIT_SECONDS", "0.05")
+        reset_concurrency_cap()
+
+        # Take the only slot manually so the next caller times out.
+        from cptv.services import traceroute as traceroute_mod
+
+        sem = traceroute_mod._get_semaphore()
+        await sem.acquire()
+        try:
+            with pytest.raises(TracerouteBusyError):
+                await run_mtr(ipaddress.ip_address("8.8.8.8"))
+        finally:
+            sem.release()
+
+    @pytest.mark.asyncio
+    async def test_releases_slot_on_success(self, monkeypatch):
+        from cptv import config
+
+        config.get_settings.cache_clear()
+        monkeypatch.setenv("CPTV_TRACEROUTE_MAX_CONCURRENCY", "1")
+        reset_concurrency_cap()
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(json.dumps(SAMPLE_MTR_JSON).encode(), b""))
+
+        with (
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch("cptv.services.traceroute._reverse_dns", return_value=None),
+            patch("cptv.services.traceroute.asn_service.lookup", return_value=None),
+        ):
+            await run_mtr(ipaddress.ip_address("8.8.8.8"))
+            # Slot must be free again — second call also succeeds.
+            await run_mtr(ipaddress.ip_address("1.1.1.1"))
+
+    @pytest.mark.asyncio
+    async def test_releases_slot_on_error(self, monkeypatch):
+        from cptv import config
+
+        config.get_settings.cache_clear()
+        monkeypatch.setenv("CPTV_TRACEROUTE_MAX_CONCURRENCY", "1")
+        reset_concurrency_cap()
+
+        with patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=FileNotFoundError,
+        ):
+            with pytest.raises(TracerouteError):
+                await run_mtr(ipaddress.ip_address("8.8.8.8"))
+
+        # Slot must be released — semaphore should not block a fresh acquire.
+        from cptv.services import traceroute as traceroute_mod
+
+        sem = traceroute_mod._get_semaphore()
+        async with asyncio.timeout(0.1):
+            await sem.acquire()
+        sem.release()
 
 
 class TestStreamMtrCached:
