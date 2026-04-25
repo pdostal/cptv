@@ -4,28 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-**Mid-implementation.** Read-only diagnostic endpoints and traceroute with Valkey caching are wired up. `PLAN.md` remains the authoritative specification.
+**Feature-complete against `PLAN.md`.** Read-only diagnostic endpoints, traceroute with Valkey caching, live SSE streaming, server-measured RTT, and client-side session history are all wired up. `PLAN.md` remains the authoritative specification.
 
 What currently exists:
 
-- `cptv/` package: `main.py`, `config.py`, `negotiation.py`, `middleware.py`.
-- Services: `ip`, `geoip` (GeoLite2 City), `asn` (GeoLite2 ASN), `dns` (known-resolver classifier), `clock`, `traceroute` (mtr wrapper + Valkey cache/rate-limit), `valkey` (connection manager).
-- Routes: `/`, `/api/v1/`, `/ip`, `/ipv4` + aliases, `/ipv6` + aliases, `/geoip`, `/asn`, `/isp`, `/dns`, `/traceroute` + `.json`/`.txt`, `/help`, `/details` + `/more`, `/health`, plus all `api/v1/` variants.
-- Templates: `base.html` (Pico CSS + HTMX), rich `index.html` with IP / GeoIP / ASN / DNS / timing / quick-links sections, `details.html`, `help.html`, `traceroute.html`, `section_stub.html`.
-- Static assets: `cptv/static/app.js` (progressive enhancements: clock-skew, dual-stack probe, DNSSEC probe via `rhybar.cz`, browser geolocation), `app.css`.
+- `cptv/` package: `main.py`, `config.py`, `negotiation.py`, `middleware.py` (subdomain rewriting + request timing).
+- Services: `ip`, `geoip` (GeoLite2 City), `asn` (GeoLite2 ASN), `dns` (known-resolver classifier), `clock`, `traceroute` (mtr wrapper + Valkey cache/rate-limit + SSE streaming generator), `valkey` (connection manager).
+- Routes: `/`, `/api/v1/`, `/ip`, `/ipv4` + aliases, `/ipv6` + aliases, `/geoip`, `/asn`, `/isp`, `/dns`, `/traceroute` + `.json`/`.txt`, `/traceroute/stream` (SSE), `/help`, `/details` + `/more`, `/health`, plus all `api/v1/` variants.
+- Templates: `base.html` (Pico CSS + HTMX + htmx-ext-sse), rich `index.html` with IP / GeoIP / ASN / DNS / timing / session-history / traceroute / quick-links sections, `details.html`, `help.html`, `traceroute.html`, `section_stub.html`, `_hop_row.html` (SSE row partial).
+- Static assets: `cptv/static/app.js` (clock-skew, dual-stack probe, DNSSEC probe via `rhybar.cz`, localStorage session history, browser geolocation), `app.css`.
 - `pyproject.toml` with ruff + bandit configured, `uv.lock`, `geoip2` + `redis[hiredis]` deps.
-- `package.json` with HTMX + Pico CSS + ESLint (+ `eslint-plugin-security`), flat `eslint.config.js`.
+- `package.json` with HTMX + htmx-ext-sse + Pico CSS + ESLint (+ `eslint-plugin-security`), flat `eslint.config.js`.
 - `Containerfile` (multi-stage: npm asset build -> uv sync -> runtime with `mtr-tiny` + `cap_net_raw`).
 - `scripts/download-geolite2.sh`, `scripts/build-assets.mjs`.
 - `.github/workflows/`: `lint.yml`, `test.yml` (pytest with Valkey service container + Lighthouse CI), `security.yml` (pip-audit, npm audit, bandit, eslint-security, trivy), `scorecard.yml`, `release.yml`.
 - `.github/dependabot.yml` for pip / npm / GitHub Actions / docker.
-- 106 tests passing: unit tests per service, integration tests for every endpoint / content-negotiation combination, traceroute cache/rate-limit tests.
+- 119 tests passing: unit tests per service (incl. `stream_mtr_cached`), integration tests for every endpoint / content-negotiation combination, traceroute cache/rate-limit + SSE event tests.
 
-What's still pending (see `PLAN.md`):
+What's still pending (see `PLAN.md` §12):
 
-- **HTMX streaming** — live traceroute progress via polling or SSE (traceroute runs and caches but does not stream hop-by-hop yet).
 - **Real DNS-side resolver detection** — current `/dns` only classifies a resolver IP when passed as `?resolver=`; true server-side detection needs a DNS-probe host (unique subdomain -> authoritative logs). Out of scope for the web app alone.
-- **Session history** (§4.9) — `localStorage` schema not yet wired up in the UI.
+- **True hop-by-hop live streaming** — the SSE stream currently runs `mtr` to completion then replays hops; switching to the `mtr-packet` line protocol would let the UI show each hop as it is probed.
+- **Anycast PoP detection, configurable quick-links title, global concurrency cap** — minor enhancements.
 
 ## Pre-commit checks
 

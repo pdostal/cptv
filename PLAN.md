@@ -59,8 +59,8 @@ proxy_set_header X-Forwarded-Proto $scheme;
 | GeoIP                        | **MaxMind GeoLite2**               | `.mmdb` baked into the container image at build time                                               |
 | Traceroute                   | **`mtr`**                          | `cap_net_raw+ep` set on `mtr-packet` binary inside image                                           |
 | DNSSEC detection             | **`rhybar.cz` + `<img>` tag**      | Client-side JS — see section 4.5                                                                   |
-| Rate limiting + cache        | **Redis**                          | TTL-based caching and atomic rate limit counters                                                   |
-| Containerisation             | **Podman Quadlet**                 | Systemd-native; one `.container` unit for app, one for Redis                                       |
+| Rate limiting + cache        | **Valkey** (Redis-compatible)      | TTL-based caching and atomic rate limit counters; spoken to via the `redis-py` client              |
+| Containerisation             | **Podman Quadlet**                 | Systemd-native; one `.container` unit for app, one for Valkey                                      |
 | Reverse proxy                | **nginx + Certbot** (nginx plugin) | TLS termination, redirects, header injection                                                       |
 | CI/CD                        | **GitHub Actions**                 | All workflows with tightened permissions — see section 8                                           |
 | Security updates             | **Dependabot**                     | Python deps, npm deps, and Actions versions                                                        |
@@ -134,9 +134,9 @@ References:
 
 ### 4.6 Traceroute / MTR 🛰️
 
-Runs `mtr --json --report --mpls -c 5 <client-ip>` as a background task, streamed via **HTMX polling** or **Server-Sent Events**.
+Runs `mtr --json --report --no-dns --mpls -c 5 <client-ip>` as a background task, streamed live to the browser via **Server-Sent Events** (`/traceroute/stream`, consumed with the `htmx-ext-sse` extension). The blocking endpoint at `/traceroute` is preserved for JSON / plain-text consumers and the no-JS fallback.
 
-DNS resolution of hop names is performed **by the application after mtr completes** — not by mtr itself. This gives full control over per-hop enrichment.
+The `--no-dns` flag is important: DNS resolution of hop names is performed **by the application after mtr completes** — not by mtr itself. This gives full control over per-hop enrichment (rDNS, ASN, MPLS labels) and lets us cache enriched results.
 
 #### Per-hop data displayed
 
@@ -157,7 +157,7 @@ Example plain-text hop:
   3.  203.0.113.1  ae-1.router.example.net  AS1234 Example ISP  3.2ms  MPLS:12345/0/1
 ```
 
-#### Rate limiting and caching (Redis)
+#### Rate limiting and caching (Valkey)
 
 Cache/rate limit key:
 
@@ -166,11 +166,12 @@ Cache/rate limit key:
 
 Rules:
 
-- 1 fresh MTR run per key per hour; cached in Redis with 1-hour TTL
+- 1 fresh MTR run per key per hour; cached in Valkey with 1-hour TTL
 - Cached result returned immediately if available
 - In-progress request from same key → **rejected**, return partial cache or HTTP 429
-- Every response includes `X-Traceroute-Cached: true/false` header
-- UI shows: **"⚡ Live result"** or **"🕐 Cached — refreshes in 43 min"**
+- Every response includes `X-Traceroute-Cached`, `X-Traceroute-Cache-Age`, and `X-Traceroute-Refreshes-In` headers
+- UI shows: **"⚡ Live result"** or **"🕐 Cached result, age 60s · refreshes in 3540s"**
+- Cache hits over the SSE stream replay stored hops with a small inter-hop delay so the live and cached UX are consistent
 
 #### NAT / CGNAT detection
 
@@ -186,8 +187,11 @@ Quadlet unit does **not** need `AddCapability=CAP_NET_RAW`. UDP mode does not el
 
 ### 4.7 Timing & Clock ⏱️
 
-- Server response time / round-trip latency displayed
-- Server embeds current timestamp in HTML response
+- **Server-side handling time** measured by `RequestTimingMiddleware` and exposed three ways:
+  - `X-Response-Time-Ms` response header on every request
+  - `timing.rtt_ms` field in the JSON aggregated response
+  - Inline display in the HTML timing card
+- Server embeds current ISO-8601 timestamp in HTML response
 - Client-side JS compares `Date.now()` to server timestamp: deviation > **±5 seconds** → visible warning ⚠️
 
 ### 4.8 Referrer / Redirect Origin 🔀
@@ -197,8 +201,10 @@ Quadlet unit does **not** need `AddCapability=CAP_NET_RAW`. UDP mode does not el
 
 ### 4.9 Session History 📋
 
-- Client's IPv4 and IPv6 addresses stored in **browser `localStorage`** (opt-in)
-- Short history shown on page — server stores nothing
+- Every IP observed (current address plus dual-stack probe results) stored in **browser `localStorage`** under the key `cptv:history:v1`
+- Each entry records `{ ip, protocol, first_seen, last_seen, count }`
+- Rendered most-recent-first on the home page; a "Clear history" button wipes the entry
+- Server stores nothing — the privacy footer reiterates this
 
 ### 4.10 HTTP Protocol Version
 
@@ -604,7 +610,7 @@ Rich health check. `200 OK` if all pass, `503` otherwise. Always JSON.
   "status": "ok",
   "checks": {
     "geoip_db": "ok",
-    "redis": "ok",
+    "valkey": "ok",
     "mtr_packet": "ok",
     "mtr_capability": "ok"
   }
@@ -613,7 +619,22 @@ Rich health check. `200 OK` if all pass, `503` otherwise. Always JSON.
 
 ---
 
-### 5.15 FastAPI auto-generated docs
+### 5.15 `GET /traceroute/stream` · `GET /api/v1/traceroute/stream`
+
+Server-Sent Events stream of traceroute progress. Returns `Content-Type: text/event-stream`. The data payload of each event is an HTML fragment so the `htmx-ext-sse` extension on the home page can swap rows in directly without a custom JSON handler.
+
+| Event    | When                                | Data payload                                                  |
+| -------- | ----------------------------------- | ------------------------------------------------------------- |
+| `status` | once at the start                   | Banner indicating live or cached, with cache-age if cached    |
+| `hop`    | once per hop, in order              | A `<tr>` rendered from `_hop_row.html` (IP, rDNS, ASN, RTT)   |
+| `done`   | once at the end                     | `<p><small>Trace complete.</small></p>`                       |
+| `error`  | on rate-limit collision or mtr fail | `<p><mark>warning text</mark></p>`                            |
+
+JSON / plain-text consumers should keep using `/traceroute` (blocking) or `/traceroute.json` / `/traceroute.txt`.
+
+---
+
+### 5.16 FastAPI auto-generated docs
 
 | Path            | Description                           |
 | --------------- | ------------------------------------- |
@@ -811,10 +832,15 @@ cptv/                         # https://github.com/pdostal/cptv
 │   │   ├── asn.py            # ASN lookups + looking glass URL generation
 │   │   ├── dns.py            # Resolver IP detection
 │   │   ├── traceroute.py     # mtr wrapper, per-hop enrichment (rDNS + ASN + MPLS),
-│   │   │                     # Redis cache/rate limit
+│   │   │                     # Valkey cache/rate limit, SSE streaming generator
+│   │   ├── valkey.py         # Valkey connection manager (uses redis-py client)
 │   │   └── clock.py          # Server timestamp for client clock skew check
-│   ├── templates/            # Jinja2 HTML templates
-│   └── static/               # Built by npm — gitignored, built fresh in CI + Containerfile
+│   ├── templates/            # Jinja2 HTML templates (incl. _hop_row.html partial for SSE)
+│   ├── middleware.py         # SubdomainMiddleware + RequestTimingMiddleware
+│   └── static/
+│       ├── app.js            # App-authored progressive enhancements (history, dnssec probe, …)
+│       ├── app.css           # App-authored CSS
+│       └── vendor/           # Built by npm (gitignored): pico.min.css, htmx.min.js, htmx-ext-sse.min.js
 ├── tests/
 │   ├── unit/                 # Per-service unit tests
 │   └── integration/          # Endpoint integration tests
@@ -845,25 +871,25 @@ cptv/                         # https://github.com/pdostal/cptv
 
 All configuration examples live in `README.md`. No standalone config files committed to the repository root.
 
-- App runs on `127.0.0.1:8000`; Redis on a Podman internal network between the two containers
+- App runs on `127.0.0.1:8000`; Valkey on a Podman internal network between the two containers
 - nginx handles TLS, redirects, subdomain routing, and `X-Base-Domain` injection
 - Certbot manages certificates for `secure.<domain>` (and optionally `ipv4.`/`ipv6.`)
-- App is **stateless** — all ephemeral state (traceroute cache, rate limits) lives in Redis
-- `node_modules/` and `cptv/static/` build output are gitignored; npm build runs in `Containerfile`
+- App is **stateless** — all ephemeral state (traceroute cache, rate limits) lives in Valkey
+- `node_modules/` and `cptv/static/vendor/` build output are gitignored; npm build runs in `Containerfile`
+- **GeoLite2 MMDBs are not baked into the image** (MaxMind EULA prohibits redistribution). They are bind-mounted at runtime from the host into `/app/vendor/geolite2/`; the env vars `CPTV_GEOIP_CITY_DB` and `CPTV_GEOIP_ASN_DB` point to them.
 
 ---
 
 ## 12. Open Issues (to be filed on GitHub)
 
-| #   | Topic                                                                           |
-| --- | ------------------------------------------------------------------------------- |
-| 1   | IPv4+IPv6 dual-stack JS fetch — exact implementation and no-JS fallback UX      |
-| 2   | Browser Geolocation opt-in — privacy notice copy                                |
-| 3   | `localStorage` history — schema design and UI                                   |
-| 4   | Clock skew UX — warning banner design and dismissal behaviour                   |
-| 5   | Traceroute abuse protection — global concurrency cap beyond Redis rate limiting |
-| 6   | Anycast PoP detection — client-side JS DoH fetch to 1.1.1.1/8.8.8.8             |
-| 7   | Quick links — configurable section title via `CPTV_QUICK_LINKS_TITLE` env var   |
+| #   | Topic                                                                                  |
+| --- | -------------------------------------------------------------------------------------- |
+| 1   | Clock skew UX — warning banner design and dismissal behaviour                          |
+| 2   | Traceroute abuse protection — global concurrency cap beyond Valkey per-key rate limit  |
+| 3   | Anycast PoP detection — client-side JS DoH fetch to 1.1.1.1/8.8.8.8                    |
+| 4   | Quick links — configurable section title via `CPTV_QUICK_LINKS_TITLE` env var          |
+| 5   | True hop-by-hop streaming via `mtr-packet` line protocol (current SSE buffers per run) |
+| 6   | Server-side resolver detection via DNS-side probe subdomain → authoritative logs       |
 
 ---
 
@@ -875,12 +901,12 @@ This statement is displayed at the bottom of every HTML page and included in the
 
 - The server logs **only the client's IP address** — the minimum necessary for operating a network diagnostic tool
 - No geolocation data, no browser fingerprint, no user-agent string, no cookies, no session identifiers are stored server-side
-- Traceroute results are cached in Redis keyed by IP address for up to 1 hour, then automatically expired — this is operational caching, not user tracking
+- Traceroute results are cached in Valkey keyed by IP address (or /64 prefix for IPv6) for up to 1 hour, then automatically expired — this is operational caching, not user tracking
 - No data is sold, shared, or sent to third parties
 
 ### What stays in your browser
 
-- **Connection history** (IPv4/IPv6 addresses from previous visits) is stored exclusively in **your browser's `localStorage`** — it never leaves your device and is never sent to the server
+- **Connection history** (IPv4/IPv6 addresses from previous visits, with first/last seen timestamps) is stored exclusively in **your browser's `localStorage`** under the key `cptv:history:v1` — it never leaves your device and is never sent to the server. A **Clear history** button on the home page wipes it.
 - **Geolocation** (if you opt in via the "Show my real location" button) is used only to display your position on the map in your browser — the coordinates are never transmitted to the server
 - **DNSSEC test** results are determined entirely client-side by your browser loading an image — no result is reported back to the server
 
