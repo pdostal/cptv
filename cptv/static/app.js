@@ -85,17 +85,25 @@
     }
   }
 
+  // ---------- shared base-domain helper ----------
+  // Peel off any "ipv4." / "ipv6." / "secure." prefix to find the base domain.
+  // Used by the dual-stack probe and the geolocation deep link.
+  function getBaseDomain() {
+    const host = window.location.hostname || "";
+    const parts = host.split(".");
+    if (["ipv4", "ipv6", "secure"].includes(parts[0])) {
+      return parts.slice(1).join(".");
+    }
+    return host;
+  }
+
   // ---------- dual-stack detection ----------
   async function detectDualStack() {
     const host = window.location.hostname;
     const port = window.location.port ? `:${window.location.port}` : "";
     if (!host || host === "localhost" || host === "127.0.0.1") return;
 
-    // Peel off any existing "ipv4." / "ipv6." prefix to find the base domain.
-    const parts = host.split(".");
-    const base = ["ipv4", "ipv6"].includes(parts[0])
-      ? parts.slice(1).join(".")
-      : host;
+    const base = getBaseDomain();
 
     const probes = [
       ["ipv4", `http://ipv4.${base}${port}/4?format=text`],
@@ -464,23 +472,63 @@
   }
 
   // ---------- browser geolocation (opt-in) ----------
+  // Browsers refuse navigator.geolocation on insecure origins (cptv.cz is
+  // intentionally HTTP). When that's the case we don't try the API at all
+  // — instead the button deep-links to https://secure.<base>/?ask-location=1
+  // which auto-runs the prompt. Visiting secure. directly never triggers
+  // the prompt unless the query param is present, so the user always
+  // initiates the request explicitly.
+  function requestGeolocation(out) {
+    if (!out) return;
+    out.textContent = "requesting…";
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        // Build with text nodes so untrusted future inputs can't escape.
+        const code = document.createElement("code");
+        code.textContent = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+        out.replaceChildren(code, document.createTextNode(` (±${Math.round(accuracy)} m)`));
+      },
+      (err) => {
+        out.textContent = `denied or unavailable (${err.message})`;
+      },
+      { timeout: 10000, maximumAge: 0 },
+    );
+  }
+
   function wireGeolocationButton() {
     const btn = qs("#request-geolocation");
     const out = qs("#browser-location");
-    if (!btn || !out || !navigator.geolocation) return;
-    on(btn, "click", () => {
-      out.textContent = "requesting…";
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude, accuracy } = pos.coords;
-          out.innerHTML = `<code>${latitude.toFixed(4)}, ${longitude.toFixed(4)}</code> (±${Math.round(accuracy)} m)`;
-        },
-        (err) => {
-          out.textContent = `denied or unavailable (${err.message})`;
-        },
-        { timeout: 10000, maximumAge: 0 },
-      );
-    });
+    if (!btn || !out) return;
+
+    if (!window.isSecureContext) {
+      // Insecure origin: API would always be blocked. Repurpose the button
+      // as a deep link to the secure subdomain.
+      const base = getBaseDomain();
+      const target = `https://secure.${base}/?ask-location=1`;
+      btn.textContent = "Open on secure. to share location";
+      btn.title = `Browser blocks geolocation on http://. Will redirect to ${target}`;
+      out.innerHTML =
+        "<small>Browser geolocation is only allowed on secure (https) origins. " +
+        "Click the button to continue on <code>secure.</code>.</small>";
+      on(btn, "click", () => {
+        window.location.href = target;
+      });
+      return;
+    }
+
+    if (!navigator.geolocation) return;
+
+    // Secure context: only auto-trigger when the query param is set, so
+    // visiting secure. manually never prompts unless the user requested it.
+    const params = new URLSearchParams(window.location.search);
+    const autoAsk = params.get("ask-location") === "1";
+
+    on(btn, "click", () => requestGeolocation(out));
+
+    if (autoAsk) {
+      requestGeolocation(out);
+    }
   }
 
   document.addEventListener("DOMContentLoaded", () => {

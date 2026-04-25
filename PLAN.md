@@ -98,6 +98,14 @@ proxy_set_header X-Forwarded-Proto $scheme;
 - Country, region, city — queried server-side from the **MaxMind GeoLite2 City** database baked into the image
 - Approximate coordinates shown as a map when JS is available, plain text otherwise
 - Small opt-in **"Show my real location"** button triggers the browser Geolocation API (client-side JS); if granted, shown alongside the GeoIP result for comparison
+- Browsers block `navigator.geolocation` on insecure origins, and the apex
+  `<domain>` is intentionally HTTP. When the JS detects
+  `!window.isSecureContext`, the button becomes a deep link that
+  navigates to `https://secure.<domain>/?ask-location=1`. The secure
+  page recognises that query parameter, auto-triggers the geolocation
+  prompt at load, and renders the coordinates on the secure page itself.
+  Visiting `secure.<domain>` directly without the query parameter never
+  prompts — the API is only invoked on an explicit user gesture.
 
 ### 4.3 ASN / Network Information 🔌
 
