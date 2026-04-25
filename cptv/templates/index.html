@@ -203,23 +203,20 @@ http = data.http %} {% set quick_links = data.quick_links %}
 
 <article id="timing-section">
   <header><strong>⏱️ Timing</strong></header>
-  <p>
-    Server time:
-    <time
-      id="server-time"
-      datetime="{{ timing.server_timestamp }}"
-      data-server-ts="{{ timing.server_timestamp }}"
-    >
-      {{ timing.server_timestamp }}
-    </time>
-  </p>
+  {# Hidden but kept in the DOM \u2014 read by checkClockSkew() in app.js
+     to compute the offset between the visitor's clock and ours. #}
+  <time
+    id="server-time"
+    datetime="{{ timing.server_timestamp }}"
+    data-server-ts="{{ timing.server_timestamp }}"
+    hidden
+  ></time>
   {% if timing.rtt_ms is not none %}
   <p>
     Server handling time: <code>{{ timing.rtt_ms }}ms</code>
     <small>(time spent on the server, excludes network)</small>
   </p>
   {% endif %}
-  <p>HTTP version: <code>{{ http.version }}</code></p>
   <p id="clock-skew-warning" hidden role="alert" aria-live="polite">
     <mark>
       ⚠️ Your clock is

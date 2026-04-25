@@ -229,6 +229,26 @@ def test_ip_card_no_protocol_annotation(client: TestClient):
     assert "(IPv6)" not in section
 
 
+def test_timing_card_drops_visible_labels_but_keeps_time_for_clock_skew(
+    client: TestClient,
+):
+    """'Server time:' and 'HTTP version:' lines were dropped in v0.1.6,
+    but the <time id='server-time'> stays (clock-skew JS reads it)."""
+    r = client.get("/", headers={**V4, "Accept": "text/html"})
+    body = r.text
+    import re
+
+    m = re.search(r'id="timing-section".*?</article>', body, re.DOTALL)
+    assert m, "timing-section not found"
+    section = m.group(0)
+    assert "Server time:" not in section
+    assert "HTTP version" not in section
+    # JS clock-skew detection still has the data it needs.
+    assert 'id="server-time"' in section
+    assert "data-server-ts=" in section
+    assert "hidden" in section
+
+
 def test_dnssec_card_mentions_rhybar(client: TestClient):
     """The DNSSEC card explains rhybar.cz is the bogus probe target."""
     r = client.get("/", headers={**V4, "Accept": "text/html"})
