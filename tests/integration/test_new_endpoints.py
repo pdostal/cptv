@@ -249,8 +249,10 @@ def test_timing_card_drops_visible_labels_but_keeps_time_for_clock_skew(
     assert "hidden" in section
 
 
-def test_dnssec_card_mentions_rhybar(client: TestClient):
-    """The DNSSEC card explains rhybar.cz is the bogus probe target."""
+def test_dnssec_badge_present_no_explainer(client: TestClient):
+    """The DNSSEC card now shows just the verdict badge \u2014 no separate
+    explainer paragraph. The 'rhybar.cz' callout is baked into the
+    badge text rendered by app.js's checkDnssec()."""
     r = client.get("/", headers={**V4, "Accept": "text/html"})
     body = r.text
     import re
@@ -258,24 +260,20 @@ def test_dnssec_card_mentions_rhybar(client: TestClient):
     m = re.search(r'id="dns-section".*?</article>', body, re.DOTALL)
     assert m, "dns-section not found"
     section = m.group(0)
-    assert "rhybar.cz" in section
-    assert "CZ.NIC" in section
+    assert 'id="dnssec-status"' in section
+    # No separate explainer markup, no toggle widget, no expander row.
+    assert "dnssec-explainer" not in section
+    assert "cptv-dnssec-row" not in section
+    assert "cptv-dnssec-toggle" not in section
 
 
-def test_dnssec_label_and_badge_share_one_line(client: TestClient):
-    """The 'DNSSEC validation:' label and the verdict badge live in the
-    SAME <p> (a flex row) so they appear side-by-side."""
-    r = client.get("/", headers={**V4, "Accept": "text/html"})
-    body = r.text
-    import re
+def test_dnssec_badge_text_in_javascript_mentions_rhybar(client: TestClient):
+    """app.js sets the verdict badge to a string that includes
+    'bogus rhybar.cz record' so the user sees what was tested."""
+    from pathlib import Path
 
-    m = re.search(r'<p[^>]*class="cptv-dnssec-row".*?</p>', body, re.DOTALL)
-    assert m, "cptv-dnssec-row not found"
-    row = m.group(0)
-    assert "cptv-dnssec-toggle" in row
-    assert 'id="dnssec-status"' in row
-    # The explainer is a separate hidden <p>, NOT inside the row.
-    assert "rhybar.cz" not in row
+    js = Path("cptv/static/app.js").read_text(encoding="utf-8")
+    assert "bogus rhybar.cz record rejected" in js
 
 
 def test_ip_card_warns_on_private_ip(client: TestClient):
