@@ -8,7 +8,14 @@ from starlette.responses import Response
 
 from cptv.config import BASE_DOMAIN_HEADER, get_settings
 
-SUBDOMAIN_PREFIXES = ("ipv4", "ipv6")
+# Prefixes the middleware will tag on request.state.subdomain. ``secure`` is
+# included so templates can brand the header even though we never rewrite
+# the path for it.
+SUBDOMAIN_PREFIXES = ("ipv4", "ipv6", "secure")
+# Subset of SUBDOMAIN_PREFIXES whose root path "/" is rewritten to /<prefix>
+# so curling ipv4.<domain> returns the bare IPv4 address. ``secure`` does
+# NOT rewrite — it's a TLS-only mirror of the apex.
+_REWRITE_PREFIXES = ("ipv4", "ipv6")
 
 
 class RequestTimingMiddleware(BaseHTTPMiddleware):
@@ -66,7 +73,7 @@ class SubdomainMiddleware(BaseHTTPMiddleware):
         subdomain = detect_subdomain(request.headers.get("host"), base_domain)
         request.state.subdomain = subdomain
 
-        if subdomain in SUBDOMAIN_PREFIXES and request.scope["path"] == "/":
+        if subdomain in _REWRITE_PREFIXES and request.scope["path"] == "/":
             request.scope["path"] = f"/{subdomain}"
             request.scope["raw_path"] = f"/{subdomain}".encode()
 

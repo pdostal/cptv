@@ -1,5 +1,12 @@
 /* First-party overrides for Pico. Keep this file small. */
 
+/* Brand prefix shown on secure.<domain>. Pico's blue accent token; Pico
+   updates it to the right shade for both light and dark themes, so this
+   stays readable without a dark-mode rule. */
+.cptv-brand-prefix {
+  color: var(--pico-color-blue-500, #0050b8);
+}
+
 article {
   margin-block: 1rem;
 }

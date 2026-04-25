@@ -16,7 +16,15 @@
       <nav>
         <ul>
           <li>
-            <strong>cptv</strong> <small>— CaPTiVe network diagnostics</small>
+            {% set _sub = request.state.subdomain if request else none %}
+            <strong>
+              {%- if _sub == "secure" -%}
+                <span class="cptv-brand-prefix">secure.</span>cptv
+              {%- else -%}
+                cptv
+              {%- endif -%}
+            </strong>
+            <small>— CaPTiVe network diagnostics</small>
           </li>
         </ul>
         <ul>
