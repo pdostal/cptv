@@ -229,6 +229,19 @@ def test_ip_card_no_protocol_annotation(client: TestClient):
     assert "(IPv6)" not in section
 
 
+def test_dnssec_card_mentions_rhybar(client: TestClient):
+    """The DNSSEC card explains rhybar.cz is the bogus probe target."""
+    r = client.get("/", headers={**V4, "Accept": "text/html"})
+    body = r.text
+    import re
+
+    m = re.search(r'id="dns-section".*?</article>', body, re.DOTALL)
+    assert m, "dns-section not found"
+    section = m.group(0)
+    assert "rhybar.cz" in section
+    assert "CZ.NIC" in section
+
+
 def test_ip_card_warns_on_private_ip(client: TestClient):
     """RFC1918 private IPs still get the (private) annotation."""
     r = client.get(
