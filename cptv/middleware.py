@@ -72,6 +72,7 @@ class SubdomainMiddleware(BaseHTTPMiddleware):
         )
         subdomain = detect_subdomain(request.headers.get("host"), base_domain)
         request.state.subdomain = subdomain
+        request.state.base_domain = base_domain
 
         if subdomain in _REWRITE_PREFIXES and request.scope["path"] == "/":
             request.scope["path"] = f"/{subdomain}"

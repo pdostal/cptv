@@ -55,6 +55,28 @@
               theme: <span id="theme-toggle-label">auto</span>
             </button>
           </li>
+          {# Quick switch between the apex (HTTP) and secure. (HTTPS).
+             Always rendered so the alternate is one click away. #}
+          {% set _base = request.state.base_domain if request else "" %}
+          {% if request and request.state.subdomain == "secure" %}
+          <li>
+            {# djlint:off H022 -- apex is HTTP-only by design (PLAN \u00a72) #}
+            <a
+              href="http://{{ _base }}/"
+              title="Open the apex (HTTP) version of this site"
+              >🔓 apex</a
+            >
+            {# djlint:on #}
+          </li>
+          {% else %}
+          <li>
+            <a
+              href="https://secure.{{ _base }}/"
+              title="Open the TLS-enforced (secure.) version of this site"
+              >🔒 secure</a
+            >
+          </li>
+          {% endif %}
           <li>
             <a
               href="https://github.com/pdostal/cptv"
