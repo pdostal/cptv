@@ -133,7 +133,10 @@ The browser simultaneously loads:
 2. A pixel from a known validly-signed domain — as a connectivity control
 
 Each probe has three terminal states: `loaded`, `errored`, or `timeout`
-(5 s cap). Outcomes:
+(30 s cap — DNSSEC validation involves signature checks and SERVFAIL
+chains that genuinely take longer than a normal lookup). The badge
+flashes "⚪ validating…" until the verdict settles or the timeout
+fires. Outcomes:
 
 - Control loaded + bogus errored → 🟢 **validating**
 - Control loaded + bogus loaded → 🔴 **not validating**

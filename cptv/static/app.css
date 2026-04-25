@@ -271,6 +271,14 @@ main.container > article:nth-child(7) {
   animation: cptv-pulse 1.4s ease-in-out infinite;
 }
 
+/* DNSSEC badge flashes 'validating\u2026' until the probe settles or the
+   30-second timeout fires. The .cptv-dnssec-pending class is set
+   server-side on initial render so the flash starts immediately;
+   checkDnssec() in app.js removes the class once a verdict is known. */
+.cptv-dnssec-pending {
+  animation: cptv-pulse 1.4s ease-in-out infinite;
+}
+
 /* Tab strip for IPv4 / IPv6 traceroute panes. */
 .cptv-trace-tabs {
   display: flex;
@@ -315,7 +323,8 @@ main.container > article:nth-child(7) {
 @media (prefers-reduced-motion: reduce) {
   main.container > article,
   .cptv-trace-pane.is-running .cptv-trace-status,
-  .cptv-trace-hops tr.cptv-hop-flash > td {
+  .cptv-trace-hops tr.cptv-hop-flash > td,
+  .cptv-dnssec-pending {
     animation: none !important;
   }
 }

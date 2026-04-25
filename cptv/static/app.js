@@ -347,8 +347,16 @@
     const badge = qs("#dnssec-status");
     if (!badge) return;
 
-    const DNSSEC_TIMEOUT_MS = 5000;
+    // 30 s gives slow validating resolvers (DNSSEC validation involves
+    // signature checks + SERVFAIL chains) plenty of headroom. The badge
+    // flashes 'validating…' until a verdict OR the timeout fires.
+    const DNSSEC_TIMEOUT_MS = 30000;
     const results = { control: null, bogus: null }; // 'loaded' | 'errored' | 'timeout'
+
+    const settle = (text) => {
+      badge.textContent = text;
+      badge.classList.remove("cptv-dnssec-pending");
+    };
 
     const render = () => {
       // Conclusion table:
@@ -357,24 +365,25 @@
       //   control errored                 → ⚪ inconclusive (control unreachable)
       //   any timeout                     → ⚪ inconclusive (timeout)
       if (results.control === null || results.bogus === null) {
-        // Still in progress: leave the initial '⚪ checking…' label alone.
+        // Still in progress: leave the flashing '⚪ validating…' label.
         return;
       }
       if (results.control === "timeout" || results.bogus === "timeout") {
-        badge.textContent =
-          "⚪ inconclusive (probe timed out — your network may be slow)";
+        settle("⚪ inconclusive (probe timed out — your network may be slow)");
         return;
       }
       if (results.control === "errored") {
-        badge.textContent = "⚪ inconclusive (control unreachable)";
+        settle("⚪ inconclusive (control unreachable)");
         return;
       }
       if (results.bogus === "loaded") {
-        badge.textContent =
-          "🔴 NOT OK — your resolver does not validate DNSSEC (bogus record accepted)";
+        settle(
+          "🔴 NOT OK — your resolver does not validate DNSSEC (bogus record accepted)",
+        );
       } else {
-        badge.textContent =
-          "🟢 OK — your resolver validates DNSSEC (bogus rhybar.cz record rejected)";
+        settle(
+          "🟢 OK — your resolver validates DNSSEC (bogus rhybar.cz record rejected)",
+        );
       }
     };
 
