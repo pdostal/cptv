@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 from cptv.services.traceroute import (
     CachedMeta,
     Hop,
+    StreamEvent,
     TracerouteError,
     TracerouteRateLimitedError,
     TracerouteResult,
@@ -147,6 +149,94 @@ class TestTracerouteText:
         assert "text/plain" in r.headers["content-type"]
         assert "203.0.113.42" in r.text
         assert "AS1234" in r.text
+
+
+class TestTracerouteStream:
+    def _patch_stream(self, events):
+        async def fake_stream(_address) -> AsyncIterator[StreamEvent]:
+            for ev in events:
+                yield ev
+
+        return patch(
+            "cptv.routes.traceroute.stream_mtr_cached",
+            side_effect=lambda addr: fake_stream(addr),
+        )
+
+    def test_stream_emits_started_hop_done(self, client: TestClient):
+        events = [
+            StreamEvent(event="started", data={"target": "203.0.113.42", "cached": False}),
+            StreamEvent(
+                event="hop",
+                data={
+                    "hop": 1,
+                    "ip": "10.0.0.1",
+                    "rdns": "gw.local",
+                    "asn": None,
+                    "asn_name": None,
+                    "loss_pct": 0.0,
+                    "avg_ms": 1.0,
+                    "best_ms": 0.8,
+                    "worst_ms": 1.2,
+                    "mpls": [],
+                },
+            ),
+            StreamEvent(event="done", data={"cached": False, "cache_age": 0, "refreshes_in": 3600}),
+        ]
+        with self._patch_stream(events):
+            r = client.get("/traceroute/stream", headers=V4)
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/event-stream")
+        body = r.text
+        assert "event: status" in body
+        assert "event: hop" in body
+        assert "event: done" in body
+        assert "10.0.0.1" in body
+        assert "Live result" in body
+        assert "Trace complete" in body
+
+    def test_stream_cached_started_banner(self, client: TestClient):
+        events = [
+            StreamEvent(
+                event="started",
+                data={
+                    "target": "203.0.113.42",
+                    "cached": True,
+                    "cache_age": 60,
+                    "refreshes_in": 3540,
+                },
+            ),
+            StreamEvent(event="done", data={"cached": True, "cache_age": 60, "refreshes_in": 3540}),
+        ]
+        with self._patch_stream(events):
+            r = client.get("/traceroute/stream", headers=V4)
+        body = r.text
+        assert "Cached result" in body
+        assert "60s" in body
+
+    def test_stream_error_event(self, client: TestClient):
+        events = [
+            StreamEvent(event="error", data={"error": "rate limited"}),
+        ]
+        with self._patch_stream(events):
+            r = client.get("/traceroute/stream", headers=V4)
+        assert "event: error" in r.text
+        assert "rate limited" in r.text
+
+    def test_stream_no_client_ip(self, client: TestClient):
+        r = client.get("/traceroute/stream")
+        assert r.status_code == 200
+        assert "event: error" in r.text
+        assert "client IP" in r.text
+
+    def test_stream_api_v1_alias(self, client: TestClient):
+        events = [
+            StreamEvent(event="started", data={"target": "203.0.113.42", "cached": False}),
+            StreamEvent(event="done", data={"cached": False, "cache_age": 0, "refreshes_in": 3600}),
+        ]
+        with self._patch_stream(events):
+            r = client.get("/api/v1/traceroute/stream", headers=V4)
+        assert r.status_code == 200
+        assert "event: status" in r.text
 
 
 class TestTracerouteApiV1Suffixed:

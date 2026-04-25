@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from cptv.negotiation import respond
@@ -14,6 +14,7 @@ from cptv.services.traceroute import (
     format_json,
     format_text,
     run_mtr_cached,
+    stream_mtr_cached,
 )
 
 log = logging.getLogger(__name__)
@@ -100,4 +101,83 @@ def _register(templates: Jinja2Templates) -> APIRouter:
         resp.headers["X-Traceroute-Refreshes-In"] = str(meta.refreshes_in)
         return resp
 
+    def _sse_html(event: str, html: str) -> str:
+        """Frame an SSE event with an HTML data payload, escaping newlines."""
+        # Per the SSE spec, newlines split the event into multiple data lines;
+        # we collapse them so the htmx-ext-sse swap receives a single string.
+        flat = html.replace("\r", "").replace("\n", "")
+        return f"event: {event}\ndata: {flat}\n\n"
+
+    def _render_hop(request: Request, hop_dict: dict) -> str:
+        ctx = {"request": request, "hop": _HopShim(hop_dict)}
+        return templates.get_template("_hop_row.html").render(ctx)
+
+    @router.get("/traceroute/stream")
+    @router.get("/api/v1/traceroute/stream")
+    async def traceroute_stream(request: Request) -> Response:
+        """Server-Sent Events stream of traceroute progress.
+
+        Emits events:
+          - ``started`` (once)  payload: HTML status banner
+          - ``hop`` (one per hop)  payload: rendered <tr> for the hop
+          - ``done`` (once)  payload: HTML status banner
+          - ``error`` (on failure)  payload: HTML error message
+
+        The HTML home page consumes this with the htmx-ext-sse extension
+        for true progressive rendering. JSON consumers should keep using
+        /traceroute or /traceroute.json.
+        """
+        address = ip_service.client_ip(request)
+        if address is None:
+
+            async def _err():
+                yield _sse_html(
+                    "error",
+                    "<p><mark>⚠️ Could not determine client IP.</mark></p>",
+                )
+
+            return StreamingResponse(_err(), media_type="text/event-stream")
+
+        async def event_generator():
+            async for ev in stream_mtr_cached(address):
+                if ev.event == "started":
+                    if ev.data.get("cached"):
+                        banner = (
+                            f"<p><small>🕐 Cached result, age "
+                            f"{ev.data.get('cache_age', 0)}s · refreshes in "
+                            f"{ev.data.get('refreshes_in', 0)}s</small></p>"
+                        )
+                    else:
+                        banner = "<p><small>⚡ Live result — running mtr…</small></p>"
+                    if ev.data.get("nat_warning"):
+                        banner += f"<p><mark>⚠️ {ev.data['nat_warning']}</mark></p>"
+                    yield _sse_html("status", banner)
+                elif ev.event == "hop":
+                    yield _sse_html("hop", _render_hop(request, ev.data))
+                elif ev.event == "done":
+                    yield _sse_html("done", "<p><small>✅ Trace complete.</small></p>")
+                elif ev.event == "error":
+                    msg = ev.data.get("error", "unknown error")
+                    yield _sse_html("error", f"<p><mark>⚠️ {msg}</mark></p>")
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                # Prevent buffering by intermediaries (nginx in particular).
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     return router
+
+
+class _HopShim:
+    """Adapt a hop dict back to attribute access for the Jinja template."""
+
+    def __init__(self, data: dict) -> None:
+        self._data = data
+
+    def __getattr__(self, name: str):
+        return self._data.get(name)

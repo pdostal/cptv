@@ -7,6 +7,7 @@ import ipaddress
 import json
 import logging
 import socket
+from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 
@@ -283,6 +284,128 @@ def _deserialize_result(data: dict) -> TracerouteResult:
 
 class TracerouteRateLimitedError(Exception):
     """Raised when a traceroute is already in progress for this key."""
+
+
+@dataclass(frozen=True)
+class StreamEvent:
+    """A single SSE event emitted by ``stream_mtr_cached``."""
+
+    event: str  # "started" | "hop" | "done" | "error"
+    data: dict
+
+
+# Delay between progressive hop emissions in seconds. Small enough to feel
+# live, large enough to avoid hammering the client.
+_STREAM_HOP_GAP = 0.12
+
+
+async def stream_mtr_cached(
+    address: IPAddress,
+) -> AsyncIterator[StreamEvent]:
+    """Yield per-hop SSE events for a traceroute, using cache when possible.
+
+    Emits, in order:
+      * one ``started`` event with target + cache metadata
+      * one ``hop`` event per hop with the enriched per-hop dict
+      * one ``done`` event with cache metadata + final hop count
+
+    On a cache hit we replay the cached hops with a small inter-hop delay
+    so the UI still feels live. On miss we run mtr (blocking call), cache
+    the result, then stream the hops out of the in-memory list.
+
+    On rate-limit collision we emit an ``error`` event and stop.
+    """
+    settings = get_settings()
+    ttl = settings.traceroute_cache_ttl
+    key = cache_key(address)
+    lock_key = f"{_LOCK_PREFIX}{key}"
+
+    r = await get_valkey()
+
+    # ---- cache hit: replay ----
+    if r is not None:
+        cached_raw = await r.get(key)
+        if cached_raw is not None:
+            remaining = await r.ttl(key)
+            remaining = max(remaining, 0)
+            age = ttl - remaining
+            data = json.loads(cached_raw)
+            result = _deserialize_result(data)
+            result.cached = True
+            yield StreamEvent(
+                event="started",
+                data={
+                    "target": result.target,
+                    "ran_at": result.ran_at,
+                    "cached": True,
+                    "cache_age": age,
+                    "refreshes_in": remaining,
+                    "nat_warning": result.nat_warning,
+                },
+            )
+            for hop in result.hops:
+                yield StreamEvent(event="hop", data=asdict(hop))
+                await asyncio.sleep(_STREAM_HOP_GAP)
+            yield StreamEvent(
+                event="done",
+                data={"cached": True, "cache_age": age, "refreshes_in": remaining},
+            )
+            return
+
+        # ---- rate limit ----
+        if await r.exists(lock_key):
+            yield StreamEvent(
+                event="error",
+                data={"error": "Traceroute already in progress for this IP."},
+            )
+            return
+
+        await r.set(lock_key, "1", ex=_SUBPROCESS_TIMEOUT + 10)
+
+    # ---- live run ----
+    try:
+        # Announce start before the (potentially slow) mtr call so the UI
+        # can flip into the loading state immediately.
+        yield StreamEvent(
+            event="started",
+            data={
+                "target": str(address),
+                "cached": False,
+                "cache_age": 0,
+                "refreshes_in": ttl,
+            },
+        )
+        try:
+            result = await run_mtr(address)
+        except Exception as exc:
+            if r is not None:
+                await r.delete(lock_key)
+            log.exception("traceroute stream failed for %s", address)
+            yield StreamEvent(event="error", data={"error": str(exc)})
+            return
+
+        # Persist to cache before streaming hops so subsequent requests hit it.
+        if r is not None:
+            serialized = json.dumps(asdict(result))
+            await r.set(key, serialized, ex=ttl)
+            await r.delete(lock_key)
+
+        for hop in result.hops:
+            yield StreamEvent(event="hop", data=asdict(hop))
+            await asyncio.sleep(_STREAM_HOP_GAP)
+
+        yield StreamEvent(
+            event="done",
+            data={"cached": False, "cache_age": 0, "refreshes_in": ttl},
+        )
+    finally:
+        if r is not None:
+            # Best-effort lock cleanup if the caller disconnects mid-stream.
+            try:
+                await r.delete(lock_key)
+            except Exception:  # noqa: BLE001, S110
+                # Lock will auto-expire via its TTL — losing it here is harmless.
+                log.debug("stream_mtr_cached: lock cleanup failed", exc_info=True)
 
 
 def format_text(result: TracerouteResult) -> str:

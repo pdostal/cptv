@@ -19,6 +19,7 @@ from cptv.services.traceroute import (
     format_text,
     run_mtr,
     run_mtr_cached,
+    stream_mtr_cached,
 )
 
 # Sample mtr JSON output matching real mtr --json format.
@@ -338,3 +339,119 @@ class TestRunMtrCached:
         # Should have set lock, cache, and deleted lock
         assert fake_redis.set.call_count == 2  # lock + cache
         fake_redis.delete.assert_called_once()  # lock cleanup
+
+
+class TestStreamMtrCached:
+    @pytest.mark.asyncio
+    @patch("cptv.services.traceroute.get_valkey", new_callable=AsyncMock, return_value=None)
+    @patch("cptv.services.traceroute.run_mtr", new_callable=AsyncMock)
+    @patch("cptv.services.traceroute.asyncio.sleep", new_callable=AsyncMock)
+    async def test_stream_no_cache_emits_started_hops_done(self, mock_sleep, mock_run, mock_valkey):
+        mock_run.return_value = TracerouteResult(
+            target="8.8.8.8",
+            ran_at="2024-01-01T00:00:00+00:00",
+            hops=[
+                Hop(hop=1, ip="10.0.0.1", loss_pct=0.0, avg_ms=1.0),
+                Hop(hop=2, ip="8.8.8.8", loss_pct=0.0, avg_ms=5.0),
+            ],
+        )
+        events = []
+        async for ev in stream_mtr_cached(ipaddress.ip_address("8.8.8.8")):
+            events.append(ev)
+
+        kinds = [e.event for e in events]
+        assert kinds == ["started", "hop", "hop", "done"]
+        assert events[0].data["cached"] is False
+        assert events[1].data["ip"] == "10.0.0.1"
+        assert events[3].data["cached"] is False
+
+    @pytest.mark.asyncio
+    @patch("cptv.services.traceroute.run_mtr", new_callable=AsyncMock)
+    @patch("cptv.services.traceroute.asyncio.sleep", new_callable=AsyncMock)
+    async def test_stream_cache_hit_replays_hops(self, mock_sleep, mock_run):
+        fake_redis = AsyncMock()
+        fake_redis.get = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "target": "8.8.8.8",
+                    "ran_at": "2024-01-01T00:00:00+00:00",
+                    "hops": [
+                        {
+                            "hop": 1,
+                            "ip": "10.0.0.1",
+                            "rdns": None,
+                            "asn": None,
+                            "asn_name": None,
+                            "loss_pct": 0.0,
+                            "avg_ms": 1.0,
+                            "best_ms": None,
+                            "worst_ms": None,
+                            "mpls": [],
+                        },
+                    ],
+                    "cached": False,
+                    "nat_warning": None,
+                }
+            )
+        )
+        fake_redis.ttl = AsyncMock(return_value=3000)
+
+        with patch(
+            "cptv.services.traceroute.get_valkey",
+            new_callable=AsyncMock,
+            return_value=fake_redis,
+        ):
+            events = []
+            async for ev in stream_mtr_cached(ipaddress.ip_address("8.8.8.8")):
+                events.append(ev)
+
+        assert events[0].event == "started"
+        assert events[0].data["cached"] is True
+        assert events[0].data["cache_age"] == 600
+        assert events[1].event == "hop"
+        assert events[-1].event == "done"
+        assert events[-1].data["cached"] is True
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("cptv.services.traceroute.run_mtr", new_callable=AsyncMock)
+    async def test_stream_rate_limited_emits_error(self, mock_run):
+        fake_redis = AsyncMock()
+        fake_redis.get = AsyncMock(return_value=None)
+        fake_redis.exists = AsyncMock(return_value=True)
+
+        with patch(
+            "cptv.services.traceroute.get_valkey",
+            new_callable=AsyncMock,
+            return_value=fake_redis,
+        ):
+            events = []
+            async for ev in stream_mtr_cached(ipaddress.ip_address("8.8.8.8")):
+                events.append(ev)
+
+        assert events == [
+            type(events[0])(
+                event="error",
+                data={"error": "Traceroute already in progress for this IP."},
+            )
+        ]
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("cptv.services.traceroute.run_mtr", new_callable=AsyncMock)
+    @patch("cptv.services.traceroute.asyncio.sleep", new_callable=AsyncMock)
+    async def test_stream_error_emits_error_event(self, mock_sleep, mock_run):
+        mock_run.side_effect = TracerouteError("mtr exploded")
+
+        with patch(
+            "cptv.services.traceroute.get_valkey",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            events = []
+            async for ev in stream_mtr_cached(ipaddress.ip_address("8.8.8.8")):
+                events.append(ev)
+
+        assert events[0].event == "started"
+        assert events[-1].event == "error"
+        assert "mtr exploded" in events[-1].data["error"]

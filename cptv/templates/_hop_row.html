@@ -1,0 +1,20 @@
+{# Single traceroute hop row used by SSE streaming. Rendered server-side so the SSE swap is just HTML. #}
+{% if hop.ip %}
+<tr>
+  <td>{{ hop.hop }}</td>
+  <td><code>{{ hop.ip }}</code></td>
+  <td>{{ hop.rdns or "—" }}</td>
+  <td>
+    {% if hop.asn %}AS{{ hop.asn }}{% if hop.asn_name %} <small>{{ hop.asn_name }}</small>{% endif %}{% else %}—{% endif %}
+  </td>
+  <td>{{ "%.1f"|format(hop.loss_pct) }}%</td>
+  <td>{% if hop.avg_ms is not none %}{{ "%.1f"|format(hop.avg_ms) }}ms{% else %}—{% endif %}</td>
+  <td>{% if hop.best_ms is not none %}{{ "%.1f"|format(hop.best_ms) }}ms{% else %}—{% endif %}</td>
+  <td>{% if hop.worst_ms is not none %}{{ "%.1f"|format(hop.worst_ms) }}ms{% else %}—{% endif %}</td>
+</tr>
+{% else %}
+<tr>
+  <td>{{ hop.hop }}</td>
+  <td colspan="7"><code>* * *</code></td>
+</tr>
+{% endif %}

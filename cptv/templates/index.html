@@ -167,14 +167,35 @@ http = data.http %} {% set quick_links = data.quick_links %}
   <header><strong>🛰️ Traceroute</strong></header>
   <div
     id="traceroute-card"
-    hx-get="/traceroute"
-    hx-trigger="load delay:300ms"
-    hx-swap="innerHTML"
+    hx-ext="sse"
+    sse-connect="/traceroute/stream"
+    sse-close="done"
   >
-    <p><small>Loading traceroute…</small></p>
+    <div id="traceroute-status" sse-swap="status,error,done" hx-swap="innerHTML">
+      <p><small>Connecting…</small></p>
+    </div>
+    <figure>
+      <table role="grid">
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">IP</th>
+            <th scope="col">Hostname</th>
+            <th scope="col">ASN</th>
+            <th scope="col">Loss</th>
+            <th scope="col">Avg</th>
+            <th scope="col">Best</th>
+            <th scope="col">Worst</th>
+          </tr>
+        </thead>
+        <tbody id="traceroute-hops" sse-swap="hop" hx-swap="beforeend">
+        </tbody>
+      </table>
+    </figure>
     <noscript>
       <p>
-        <a href="/traceroute">Run traceroute to your IP →</a>
+        JavaScript-disabled visitors:
+        <a href="/traceroute">run traceroute (blocking) →</a>
       </p>
     </noscript>
   </div>
