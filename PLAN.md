@@ -190,7 +190,22 @@ RFC1918 and CGNAT (`100.64.0.0/10`) ranges show a contextual warning ⚠️. Tra
 RUN setcap cap_net_raw+ep /usr/bin/mtr-packet
 ```
 
-Quadlet unit does **not** need `AddCapability=CAP_NET_RAW`. UDP mode does not eliminate this requirement.
+In **rootful** Podman / Docker the file capability is honoured and the
+container needs no extra flags.
+
+In **rootless** Podman the file capability is dropped when the binary
+runs inside an unprivileged user namespace, so `mtr-packet` fails to
+open raw sockets and the parent reports
+`mtr: Failure to start mtr-packet: Invalid argument`. The Quadlet must
+add the capability explicitly:
+
+```ini
+[Container]
+AddCapability=CAP_NET_RAW
+```
+
+UDP mode does not eliminate this requirement either; `mtr-packet` still
+needs raw sockets to receive ICMP time-exceeded replies.
 
 ### 4.7 Timing & Clock ⏱️
 
