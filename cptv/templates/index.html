@@ -182,20 +182,23 @@ http = data.http %} {% set quick_links = data.quick_links %}
     DNSSEC validation:
     <span id="dnssec-status" aria-live="polite">⚪ checking…</span>
   </p>
-  <p>
-    <small>
-      Tested by loading an image from
-      <a
-        href="https://rhybar.cz/"
-        target="_blank"
-        rel="noopener noreferrer"
-        ><code>rhybar.cz</code></a
-      >
-      — a domain CZ.NIC publishes with a deliberately bogus DNSSEC
-      signature. If your resolver validates DNSSEC the load fails
-      and the test reports OK.
-    </small>
-  </p>
+  <details>
+    <summary>How is this tested?</summary>
+    <p>
+      <small>
+        Tested by loading an image from
+        <a
+          href="https://rhybar.cz/"
+          target="_blank"
+          rel="noopener noreferrer"
+          ><code>rhybar.cz</code></a
+        >
+        — a domain CZ.NIC publishes with a deliberately bogus DNSSEC
+        signature. If your resolver validates DNSSEC the load fails
+        and the test reports OK.
+      </small>
+    </p>
+  </details>
   <noscript
     ><small>DNSSEC validation check requires JavaScript.</small></noscript
   >

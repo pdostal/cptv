@@ -165,10 +165,10 @@ def test_responsive_header_uses_details_hamburger(client: TestClient):
         },
     )
     body = r.text
-    # Brand link to / and the tagline class JS / CSS hide on narrow screens.
+    # Brand link to / and the tagline class CSS hides on narrow screens.
     assert 'class="cptv-brand"' in body
     assert 'class="cptv-brand-tagline"' in body
-    # <details>/<summary> hamburger so the menu collapses without JS.
-    assert "cptv-nav-disclosure" in body
-    assert "cptv-nav-toggle" in body
-    assert "cptv-nav-menu" in body
+    # Hamburger button + always-rendered <ul> menu (JS toggles data-open).
+    assert 'class="cptv-nav-toggle"' in body
+    assert 'class="cptv-nav-menu"' in body
+    assert 'aria-expanded="false"' in body
