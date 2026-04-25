@@ -203,7 +203,7 @@ http = data.http %} {% set quick_links = data.quick_links %}
 
 {% if quick_links %}
 <article id="quick-links-section">
-  <header><strong>🔗 Quick Links</strong></header>
+  <header><strong>🔗 {{ data.quick_links_title or "Quick Links" }}</strong></header>
   <ul>
     {% for link in quick_links %}
     <li>

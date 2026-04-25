@@ -192,5 +192,26 @@ def test_aggregated_with_quick_links(monkeypatch, client: TestClient):
         assert r.status_code == 200
         body = r.json()
         assert body["quick_links"][0]["label"] == "Looking Glass"
+        # Default title when CPTV_QUICK_LINKS_TITLE is unset.
+        assert body["quick_links_title"] == "Quick Links"
+    finally:
+        config.get_settings.cache_clear()
+
+
+def test_quick_links_custom_title(monkeypatch, client: TestClient):
+    from cptv import config
+
+    config.get_settings.cache_clear()
+    monkeypatch.setenv(
+        "CPTV_QUICK_LINKS",
+        '[{"label":"Wiki","url":"https://wiki.example.net"}]',
+    )
+    monkeypatch.setenv("CPTV_QUICK_LINKS_TITLE", "Operator Tools")
+    try:
+        r = client.get("/", headers={**V4, "Accept": "application/json"})
+        assert r.json()["quick_links_title"] == "Operator Tools"
+
+        r2 = client.get("/", headers={**V4, "Accept": "text/html"})
+        assert "🔗 Operator Tools" in r2.text
     finally:
         config.get_settings.cache_clear()

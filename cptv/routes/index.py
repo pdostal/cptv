@@ -86,6 +86,7 @@ def _collect(request: Request) -> dict:
             "repo": "https://github.com/pdostal/cptv",
         },
         "quick_links": [link.model_dump() for link in get_settings().quick_links],
+        "quick_links_title": get_settings().quick_links_title,
     }
 
 
