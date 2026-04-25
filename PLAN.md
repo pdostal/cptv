@@ -129,14 +129,19 @@ Detected **client-side** via JS `<img>` tag — because the question is whether 
 
 The browser simultaneously loads:
 
-1. A pixel from **`http://www.rhybar.cz/`** — intentionally signed with an **invalid DNSSEC signature**, operated by **CZ.NIC** (Czech internet registry) specifically as a test domain
+1. A pixel from **`https://rhybar.cz/`** — intentionally signed with an **invalid DNSSEC signature**, operated by **CZ.NIC** (Czech internet registry) specifically as a test domain
 2. A pixel from a known validly-signed domain — as a connectivity control
 
-Outcomes:
+Each probe has three terminal states: `loaded`, `errored`, or `timeout`
+(5 s cap). Outcomes:
 
-- Control loads + `rhybar.cz` fails → 🟢 **validating**
-- Both load → 🔴 **not validating**
-- Control fails → ⚪ **inconclusive**
+- Control loaded + bogus errored → 🟢 **validating**
+- Control loaded + bogus loaded → 🔴 **not validating**
+- Control errored → ⚪ **inconclusive (control unreachable)**
+- Either probe timed out → ⚪ **inconclusive (probe timed out)**.
+  A timeout is _not_ treated as success: a slow network must not let
+  us claim "validating" when the resolver might in fact have returned
+  the bogus record.
 - JS disabled → ⚪ _"Unable to determine — JavaScript required"_
 
 References:

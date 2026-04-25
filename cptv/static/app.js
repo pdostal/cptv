@@ -133,51 +133,68 @@
   }
 
   // ---------- DNSSEC probe ----------
-  // Loads an image from www.rhybar.cz (intentionally signed with an invalid
-  // DNSSEC signature by CZ.NIC) and from a control host. If only the control
-  // loads, the resolver validates DNSSEC.
+  // Loads an image from rhybar.cz (intentionally signed with an invalid
+  // DNSSEC signature by CZ.NIC) and from a control host. If only the
+  // control loads, the resolver validates DNSSEC.
+  //
+  // Each probe has three terminal states:
+  //   * 'loaded' — confirmed reachable
+  //   * 'errored' — confirmed unreachable
+  //   * 'timeout' — no answer within DNSSEC_TIMEOUT_MS, treat as inconclusive
+  // Crucially, a bogus-probe TIMEOUT is NOT the same as an explicit error:
+  // a slow network shouldn't make us claim 'validating' when the resolver
+  // might in fact return the bogus record.
   function checkDnssec() {
     const badge = qs("#dnssec-status");
     if (!badge) return;
 
-    const results = { control: null, bogus: null };
-    const settle = () => {
-      if (results.control === null || results.bogus === null) return;
-      if (results.control === false) {
+    const DNSSEC_TIMEOUT_MS = 5000;
+    const results = { control: null, bogus: null }; // 'loaded' | 'errored' | 'timeout'
+
+    const render = () => {
+      // Conclusion table:
+      //   control loaded  & bogus loaded   → 🔴 not validating
+      //   control loaded  & bogus errored  → 🟢 validating
+      //   control errored                 → ⚪ inconclusive (control unreachable)
+      //   any timeout                     → ⚪ inconclusive (timeout)
+      if (results.control === null || results.bogus === null) {
+        // Still in progress: leave the initial '⚪ checking…' label alone.
+        return;
+      }
+      if (results.control === "timeout" || results.bogus === "timeout") {
+        badge.textContent =
+          "⚪ inconclusive (probe timed out — your network may be slow)";
+        return;
+      }
+      if (results.control === "errored") {
         badge.textContent = "⚪ inconclusive (control unreachable)";
-      } else if (results.bogus === true) {
-        badge.textContent = "🔴 not validating";
+        return;
+      }
+      if (results.bogus === "loaded") {
+        badge.textContent = "🔴 not validating (resolver returned bogus record)";
       } else {
-        badge.textContent = "🟢 validating";
+        badge.textContent = "🟢 validating (bogus record was rejected)";
       }
     };
+
     const probe = (url, key) => {
       const img = new ImageCtor();
-      img.onload = () => {
-        results[key] = true;
-        settle();
+      let settled = false;
+      const finish = (state) => {
+        if (settled) return;
+        settled = true;
+        results[key] = state;
+        render();
       };
-      img.onerror = () => {
-        results[key] = false;
-        settle();
-      };
+      img.onload = () => finish("loaded");
+      img.onerror = () => finish("errored");
       img.src = url;
+      window.setTimeout(() => finish("timeout"), DNSSEC_TIMEOUT_MS);
     };
-    // Control: a validly-signed site. Bogus: rhybar.cz (CZ.NIC DNSSEC test).
-    // Both URLs are HTTPS so secure.<domain> doesn't trigger Mixed-Content
-    // upgrade notices. The DNSSEC test depends on whether the visitor's
-    // resolver returns the bogus A record at all, not on the TLS handshake,
-    // so the choice of scheme is harmless. www.rhybar.cz serves HTTPS with
-    // a valid certificate (HSTS + HTTP/2).
-    probe(`https://www.iana.org/favicon.ico?t=${Date.now()}`, "control");
-    probe(`https://www.rhybar.cz/favicon.ico?t=${Date.now()}`, "bogus");
 
-    // Don't hang forever.
-    setTimeout(() => {
-      if (results.control === null) results.control = false;
-      if (results.bogus === null) results.bogus = false;
-      settle();
-    }, 8000);
+    probe(`https://www.iana.org/favicon.ico?t=${Date.now()}`, "control");
+    // Apex rhybar.cz, not www. — both share the bogus DNSSEC signature.
+    probe(`https://rhybar.cz/favicon.ico?t=${Date.now()}`, "bogus");
   }
 
   // ---------- resolver detection (client-side) ----------
