@@ -432,6 +432,47 @@
     });
   }
 
+  // ---------- responsive nav toggle ----------
+  // Replaces the previous <details>-based hamburger because Chromium
+  // had quirks with display:contents on <details> hiding the children
+  // even when the wrapper should be transparent. Plain <button> + JS
+  // is boring and works everywhere.
+  function wireNavToggle() {
+    const nav = qs(".cptv-nav");
+    const btn = qs(".cptv-nav-toggle");
+    const menu = qs(".cptv-nav-menu");
+    if (!nav || !btn || !menu) return;
+
+    const setOpen = (open) => {
+      if (open) nav.dataset.open = "true";
+      else delete nav.dataset.open;
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+
+    on(btn, "click", (ev) => {
+      ev.stopPropagation();
+      setOpen(nav.dataset.open !== "true");
+    });
+
+    // Click outside the menu (or press Esc) closes the dropdown.
+    on(document, "click", (ev) => {
+      if (nav.dataset.open !== "true") return;
+      if (nav.contains(ev.target)) return;
+      setOpen(false);
+    });
+    on(document, "keydown", (ev) => {
+      if (ev.key === "Escape") setOpen(false);
+    });
+
+    // If the viewport grows past the breakpoint, drop the open state so
+    // resizing back to mobile starts fresh.
+    const mql = window.matchMedia("(min-width: 721px)");
+    const onResize = () => {
+      if (mql.matches) setOpen(false);
+    };
+    mql.addEventListener?.("change", onResize);
+  }
+
   // Apply stored theme as early as possible to avoid a flash of light/dark.
   applyTheme(readTheme());
 
@@ -877,6 +918,7 @@
     detectAnycastPop();
     detectResolver();
     wireThemeToggle();
+    wireNavToggle();
     renderHistory(); // Always render the history card from cached entries.
 
     // detectDualStack must finish before per-stack enrichment fires so we

@@ -42,13 +42,16 @@
 /* ---------- responsive header (PLAN \u00a74.13 / mobile UX) ---------- */
 
 /* The header is a flex row: brand on the left, controls on the right.
-   On narrow viewports the controls collapse into a <details> hamburger. */
+   On narrow viewports the menu hides and the hamburger button surfaces;
+   click flips data-open on this <nav> and the menu drops down absolute
+   relative to this container. */
 .cptv-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+  position: relative;
 }
 .cptv-brand,
 .cptv-brand:hover {
@@ -58,33 +61,22 @@
 .cptv-brand strong {
   margin-right: 0.3rem;
 }
-.cptv-nav-disclosure {
-  /* Reset Pico's <details> chrome so the controls look like a nav.
-     On desktop (see @media below) we set display:contents so the
-     <details> element generates no box and its children render in
-     the flow as if it weren't there \u2014 sidestepping the browser's
-     'closed details hides children' behaviour that would otherwise
-     suppress the inline menu. */
-  margin: 0;
-  padding: 0;
-  position: relative;
-}
+/* Hamburger button. Bigger glyph than the previous <summary> version
+   because it's a touch target on mobile. */
 .cptv-nav-toggle {
   cursor: pointer;
-  list-style: none;
   user-select: none;
-  font-size: 1.5rem;
+  font-size: 1.9rem;
   line-height: 1;
-  padding: 0.2rem 0.6rem;
+  padding: 0.15rem 0.55rem;
   border: 1px solid var(--pico-muted-border-color, #ccc);
   border-radius: 0.4rem;
-  /* Override the C12 'summary as link' styling: this one is a button. */
   color: inherit;
-  text-decoration: none;
   background: transparent;
-}
-.cptv-nav-toggle::-webkit-details-marker {
-  display: none;
+  width: auto;
+  /* Pico styles <button> as a chunky filled primary button by default;
+     reset to a flat outlined hamburger so this looks like a nav toggle. */
+  margin: 0;
 }
 .cptv-nav-menu {
   display: flex;
@@ -93,31 +85,31 @@
   list-style: none;
   margin: 0;
   padding: 0;
+  position: relative;
 }
 .cptv-nav-menu li {
   margin: 0;
   padding: 0;
 }
 
-/* Desktop: lift the <details> wrapper out of the layout entirely
-   (display: contents) so .cptv-nav-menu renders inline as part of the
-   header flex row. The hamburger summary is hidden in this mode. */
+/* Desktop (>= 721 px): hide the hamburger button, show the inline menu. */
 @media (min-width: 721px) {
-  .cptv-nav-disclosure {
-    display: contents;
-  }
   .cptv-nav-toggle {
     display: none;
   }
+  /* Force the menu to be inline regardless of any data-open state. */
+  .cptv-nav-menu {
+    display: flex !important;
+  }
 }
 
-/* Phone + tablet: hamburger summary visible, menu drops down on click. */
+/* Phone + tablet (<= 720 px): show the hamburger; hide the menu until
+   the user clicks. The toggle JS flips data-open on the <nav>. */
 @media (max-width: 720px) {
-  /* Hide the menu unless the user clicks the hamburger (=details[open]). */
-  .cptv-nav-disclosure:not([open]) .cptv-nav-menu {
+  .cptv-nav .cptv-nav-menu {
     display: none;
   }
-  .cptv-nav-disclosure[open] .cptv-nav-menu {
+  .cptv-nav[data-open="true"] .cptv-nav-menu {
     display: flex;
     flex-direction: column;
     align-items: stretch;
