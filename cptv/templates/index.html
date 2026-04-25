@@ -47,8 +47,14 @@ http = data.http %} {% set quick_links = data.quick_links %}
   <div id="dual-stack" data-protocol="{{ ip.protocol or '' }}">
     <p><small>Dual-stack check:</small></p>
     <ul>
-      <li>IPv4: <code data-ds="ipv4">{{ ip.ipv4 or '…' }}</code></li>
-      <li>IPv6: <code data-ds="ipv6">{{ ip.ipv6 or '…' }}</code></li>
+      <li>
+        IPv4: <code data-ds="ipv4">{{ ip.ipv4 or '…' }}</code>
+        <small data-ds-via="ipv4" class="cptv-probe-via"></small>
+      </li>
+      <li>
+        IPv6: <code data-ds="ipv6">{{ ip.ipv6 or '…' }}</code>
+        <small data-ds-via="ipv6" class="cptv-probe-via"></small>
+      </li>
     </ul>
     <noscript
       ><small>Enable JavaScript for dual-stack detection.</small></noscript

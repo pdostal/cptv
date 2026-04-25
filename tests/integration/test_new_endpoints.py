@@ -145,6 +145,9 @@ def test_aggregated_html_renders_sections(client: TestClient):
     assert "/static/app.js" in body
     # Dark Reader opt-out signal (we already implement native dark mode).
     assert '<meta name="darkreader-lock"' in body
+    # Inline SVG favicon so the browser doesn't 404 on /favicon.ico.
+    assert 'rel="icon"' in body
+    assert "data:image/svg+xml" in body
 
 
 def test_details_html_adds_request_section(client: TestClient):

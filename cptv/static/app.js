@@ -105,10 +105,15 @@
 
     const base = getBaseDomain();
 
+    // Protocol-relative URLs let the browser pick the page's scheme:
+    // http on the apex, https on secure.<domain>. Mixed-content
+    // blocking is avoided either way as long as ipv4./ipv6. answer
+    // both protocols (see README's nginx section).
     const probes = [
-      ["ipv4", `http://ipv4.${base}${port}/4?format=text`],
-      ["ipv6", `http://ipv6.${base}${port}/6?format=text`],
+      ["ipv4", `//ipv4.${base}${port}/4?format=text`],
+      ["ipv6", `//ipv6.${base}${port}/6?format=text`],
     ];
+    const scheme = window.location.protocol.replace(":", "");
     for (const [stack, url] of probes) {
       try {
         const resp = await fetch(url, { cache: "no-store" });
@@ -117,6 +122,10 @@
         if (!text) continue;
         const el = document.querySelector(`[data-ds="${stack}"]`);
         if (el) el.textContent = text;
+        // Tag the row with the actual scheme used so a curious user
+        // can see whether the probe used http or https. Tiny, inline.
+        const badge = document.querySelector(`[data-ds-via="${stack}"]`);
+        if (badge) badge.textContent = `via ${scheme}`;
       } catch {
         /* silent — dual-stack probe is best-effort */
       }
@@ -155,8 +164,13 @@
       img.src = url;
     };
     // Control: a validly-signed site. Bogus: rhybar.cz (CZ.NIC DNSSEC test).
+    // Both URLs are HTTPS so secure.<domain> doesn't trigger Mixed-Content
+    // upgrade notices. The DNSSEC test depends on whether the visitor's
+    // resolver returns the bogus A record at all, not on the TLS handshake,
+    // so the choice of scheme is harmless. www.rhybar.cz serves HTTPS with
+    // a valid certificate (HSTS + HTTP/2).
     probe(`https://www.iana.org/favicon.ico?t=${Date.now()}`, "control");
-    probe(`http://www.rhybar.cz/favicon.ico?t=${Date.now()}`, "bogus");
+    probe(`https://www.rhybar.cz/favicon.ico?t=${Date.now()}`, "bogus");
 
     // Don't hang forever.
     setTimeout(() => {
@@ -282,10 +296,17 @@
       if (existing) existing.replaceWith(row);
       else tbody.appendChild(row);
       // Briefly flash the row to draw the eye to fresh measurements.
-      row.classList.add("cptv-hop-flash");
-      // Reflow to restart the animation reliably.
-      void row.offsetWidth;
-      window.setTimeout(() => row.classList.remove("cptv-hop-flash"), 700);
+      // Use double rAF to schedule the class add after the next paint
+      // so we don't force layout (Firefox warns "Layout was forced
+      // before the page was fully loaded" if we read offsetWidth here
+      // mid-load) and the keyframe restarts cleanly.
+      row.classList.remove("cptv-hop-flash");
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          row.classList.add("cptv-hop-flash");
+          window.setTimeout(() => row.classList.remove("cptv-hop-flash"), 700);
+        });
+      });
     };
 
     card.classList.add("is-running");

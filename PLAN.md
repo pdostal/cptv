@@ -20,13 +20,15 @@ The application runs under **any domain name** — `cptv.cz`, `cptv.com`, `capti
 
 ## 2. Domain Structure
 
-| Subdomain prefix  | Protocol       | Purpose                                            |
-| ----------------- | -------------- | -------------------------------------------------- |
-| `ipv4.<domain>`   | HTTP           | DNS A-record only → forces IPv4 connection         |
-| `ipv6.<domain>`   | HTTP           | DNS AAAA-record only → forces IPv6 connection      |
-| `secure.<domain>` | **HTTPS only** | Encrypted endpoint; HTTP → HTTPS redirect in place |
+| Subdomain prefix  | Protocol       | Purpose                                                                       |
+| ----------------- | -------------- | ----------------------------------------------------------------------------- |
+| `ipv4.<domain>`   | HTTP + HTTPS   | DNS A-record only → forces IPv4. Both protocols answer.                       |
+| `ipv6.<domain>`   | HTTP + HTTPS   | DNS AAAA-record only → forces IPv6. Both protocols answer.                    |
+| `secure.<domain>` | **HTTPS only** | Encrypted endpoint; HTTP → HTTPS redirect in place                            |
 
 The main entry point `<domain>` / `www.<domain>` is **HTTP only** — intentionally unencrypted so captive portals can intercept it.
+
+`ipv4.<domain>` and `ipv6.<domain>` accept both protocols on purpose: the home page's JavaScript dual-stack probe runs on whichever scheme the page itself was loaded with, and a same-scheme cross-origin fetch is the only way to avoid mixed-content blocking on `secure.<domain>`. The "force IPv4 / IPv6" semantics come from DNS (A-only / AAAA-only records), not from the URL scheme.
 
 ### Redirect rules
 
