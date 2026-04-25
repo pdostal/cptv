@@ -379,7 +379,7 @@ Full aggregated info — all fields combined.
     "number": 1234,
     "name": "Example ISP",
     "prefix": "203.0.113.0/24",
-    "looking_glass": "https://lg.he.net/cgi-bin/bgplookingglass?asn=1234"
+    "looking_glass": "https://bgp.he.net/AS1234"
   },
   "dns": {
     "resolver_ip": "1.1.1.1",
@@ -488,7 +488,7 @@ IPv6 address only. Also served by the `ipv6.<domain>` subdomain.
 🔌 ASN:       AS1234
     Name:      Example ISP
     Prefix:    203.0.113.0/24
-    Looking glass: https://lg.he.net/...
+    Looking glass: https://bgp.he.net/AS1234
 ```
 
 **JSON:**
@@ -498,7 +498,7 @@ IPv6 address only. Also served by the `ipv6.<domain>` subdomain.
   "asn": 1234,
   "name": "Example ISP",
   "prefix": "203.0.113.0/24",
-  "looking_glass": "https://lg.he.net/cgi-bin/bgplookingglass?asn=1234"
+  "looking_glass": "https://bgp.he.net/AS1234"
 }
 ```
 

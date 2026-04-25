@@ -20,7 +20,8 @@ class ASN:
 
     @property
     def looking_glass(self) -> str:
-        return f"https://lg.he.net/cgi-bin/bgplookingglass?asn={self.number}"
+        # Hurricane Electric's BGP toolkit; canonical URL shape since 2019.
+        return f"https://bgp.he.net/AS{self.number}"
 
 
 @lru_cache(maxsize=1)
