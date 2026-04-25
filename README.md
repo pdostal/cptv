@@ -192,12 +192,27 @@ Environment=CPTV_VALKEY_HOST=127.0.0.1
 Environment=CPTV_VALKEY_PORT=6379
 AutoUpdate=registry
 
-# Uncomment and customise as needed:
-# Environment=CPTV_QUICK_LINKS=[{"label":"Status","url":"https://status.example.net","icon":"🟢"}]
+# Optional: a Quick Links section on the home page. Set on the
+# CONTAINER, not the pod \u2014 Quadlet does not propagate Environment=
+# from .pod files into the .container processes.
+# Single-line JSON array; the value of the env var must be quoted.
+Environment=CPTV_QUICK_LINKS_TITLE=Operator tools
+Environment=CPTV_QUICK_LINKS=[{"label":"Status page","url":"https://status.example.net","icon":"\ud83d\udfe2","description":"green = good"},{"label":"Internal wiki","url":"https://wiki.example.net","icon":"\ud83d\udcd6"},{"label":"Looking glass","url":"https://lg.example.net","icon":"\ud83d\udd2d"}]
 
 [Install]
 WantedBy=default.target
 ```
+
+> **Quick Links live on the .container, not the .pod.** Quadlet
+> doesn't forward `[Pod]` `Environment=` lines into individual
+> container processes. If `CPTV_QUICK_LINKS` doesn't show up in the
+> rendered home page, double-check it sits on `cptv.container` and
+> reload the service:
+>
+> ```sh
+> systemctl --user restart cptv.service
+> curl -s http://cptv.example.com/?format=json | jq .quick_links
+> ```
 
 ### 2. Load and start the units
 

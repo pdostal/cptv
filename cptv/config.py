@@ -5,7 +5,7 @@ import logging
 from functools import lru_cache
 
 from fastapi import Request
-from pydantic import Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 log = logging.getLogger(__name__)
@@ -13,7 +13,14 @@ log = logging.getLogger(__name__)
 BASE_DOMAIN_HEADER = "x-base-domain"
 
 
-class QuickLink(BaseSettings):
+class QuickLink(BaseModel):
+    """One entry in the configurable Quick Links list.
+
+    Plain BaseModel (NOT BaseSettings) so we don't accidentally read
+    `LABEL` / `URL` / `ICON` env vars when constructing instances from
+    the parsed CPTV_QUICK_LINKS JSON list.
+    """
+
     label: str
     url: str
     icon: str | None = None
