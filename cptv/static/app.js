@@ -151,10 +151,15 @@
     }
   }
 
-  // Render either a single merged row (when both stacks agree) or one
-  // row per stack into a target container. The row builder receives
-  // the data dict and returns a DocumentFragment.
-  function renderPerStack(target, perStack, rowBuilder, equalKeys) {
+  // Render the per-stack rows into a target container.
+  //
+  // When both stacks are present and `equalKeys` all match between v4
+  // and v6, we hand BOTH dicts to mergedBuilder(ipv4, ipv6) so it can
+  // render shared fields once and label only the fields that genuinely
+  // differ. When v4 and v6 disagree on something material (or only one
+  // stack is present), we fall back to one independent row per stack
+  // via the same builder, passing only the relevant dict.
+  function renderPerStack(target, perStack, mergedBuilder, equalKeys) {
     if (!target) return;
     target.replaceChildren();
     target.hidden = false;
@@ -167,75 +172,112 @@
       return;
     }
 
-    const equal =
+    const sharedShape =
       ipv4 &&
       ipv6 &&
-      equalKeys.every((k) => JSON.stringify(ipv4[k]) === JSON.stringify(ipv6[k]));
+      equalKeys.every(
+        (k) => JSON.stringify(ipv4[k]) === JSON.stringify(ipv6[k]),
+      );
 
-    if (ipv4 && ipv6 && equal) {
-      target.appendChild(rowBuilder(ipv4, "both"));
+    if (sharedShape) {
+      // Both present, equalKeys match — show one merged row that the
+      // builder can decorate with per-stack labels for the diverging
+      // fields (e.g. prefix on ASN, coords on GeoIP).
+      target.appendChild(mergedBuilder(ipv4, ipv6));
     } else {
-      if (ipv4) target.appendChild(rowBuilder(ipv4, "IPv4"));
-      if (ipv6) target.appendChild(rowBuilder(ipv6, "IPv6"));
+      // Heading-prefixed rows for each present stack.
+      if (ipv4) target.appendChild(mergedBuilder(ipv4, null, "IPv4"));
+      if (ipv6) target.appendChild(mergedBuilder(null, ipv6, "IPv6"));
     }
   }
 
-  function buildGeoipRow(data, label) {
+  // Helper: append a labelled-or-plain coords / prefix line to <ul>.
+  // When the merged path passed both dicts and only this field differs,
+  // we render one line per stack with a "(IPv4)" / "(IPv6)" suffix.
+  function appendStackLine(ul, baseLabel, ipv4, ipv6, fmt) {
+    const v4 = ipv4 ? fmt(ipv4) : null;
+    const v6 = ipv6 ? fmt(ipv6) : null;
+    if (v4 && v6 && v4.text === v6.text) {
+      // Identical \u2014 one unlabelled line.
+      const li = document.createElement("li");
+      li.append(`${baseLabel}: `, ...v4.parts);
+      ul.appendChild(li);
+      return;
+    }
+    if (v4) {
+      const li = document.createElement("li");
+      const suffix = ipv6 ? " (IPv4)" : "";
+      li.append(`${baseLabel}${suffix}: `, ...v4.parts);
+      ul.appendChild(li);
+    }
+    if (v6) {
+      const li = document.createElement("li");
+      const suffix = ipv4 ? " (IPv6)" : "";
+      li.append(`${baseLabel}${suffix}: `, ...v6.parts);
+      ul.appendChild(li);
+    }
+  }
+
+  function buildGeoipRow(ipv4, ipv6, headingLabel) {
+    const a = ipv4 || ipv6;
     const ul = document.createElement("ul");
-    if (label !== "both") {
+    if (headingLabel) {
       const head = document.createElement("li");
-      head.innerHTML = `<strong>${label}</strong>`;
+      head.innerHTML = `<strong>${headingLabel}</strong>`;
       ul.appendChild(head);
     }
     const country = document.createElement("li");
-    country.textContent = `Country: ${data.country_code || "?"} ${data.country || ""}`.trimEnd();
+    country.textContent =
+      `Country: ${a.country_code || "?"} ${a.country || ""}`.trimEnd();
     ul.appendChild(country);
-    if (data.region) {
+    if (a.region) {
       const li = document.createElement("li");
-      li.textContent = `Region: ${data.region}`;
+      li.textContent = `Region: ${a.region}`;
       ul.appendChild(li);
     }
     const city = document.createElement("li");
-    city.textContent = `City: ${data.city || "—"}`;
+    city.textContent = `City: ${a.city || "—"}`;
     ul.appendChild(city);
-    if (data.latitude != null && data.longitude != null) {
-      const c = document.createElement("li");
-      c.textContent = `Coords: ${data.latitude.toFixed(4)}, ${data.longitude.toFixed(4)}`;
-      ul.appendChild(c);
-    }
+    // Coords \u2014 may differ slightly per stack, so use the labelled helper.
+    appendStackLine(ul, "Coords", ipv4, ipv6, (d) => {
+      if (d.latitude == null || d.longitude == null) return null;
+      const text = `${d.latitude.toFixed(4)}, ${d.longitude.toFixed(4)}`;
+      return { text, parts: [text] };
+    });
     return ul;
   }
 
-  function buildAsnRow(data, label) {
+  function buildAsnRow(ipv4, ipv6, headingLabel) {
+    const a = ipv4 || ipv6;
     const ul = document.createElement("ul");
-    if (label !== "both") {
+    if (headingLabel) {
       const head = document.createElement("li");
-      head.innerHTML = `<strong>${label}</strong>`;
+      head.innerHTML = `<strong>${headingLabel}</strong>`;
       ul.appendChild(head);
     }
     const asn = document.createElement("li");
-    asn.innerHTML = `ASN: <strong>AS${data.asn}</strong>`;
+    asn.innerHTML = `ASN: <strong>AS${a.asn}</strong>`;
     ul.appendChild(asn);
-    if (data.name) {
+    if (a.name) {
       const li = document.createElement("li");
-      li.textContent = `Operator: ${data.name}`;
+      li.textContent = `Operator: ${a.name}`;
       ul.appendChild(li);
     }
-    if (data.prefix) {
-      const li = document.createElement("li");
+    // Prefix \u2014 different per family; use the labelled helper.
+    appendStackLine(ul, "Prefix", ipv4, ipv6, (d) => {
+      if (!d.prefix) return null;
       const code = document.createElement("code");
-      code.textContent = data.prefix;
-      li.append("Prefix: ", code);
-      ul.appendChild(li);
-    }
-    if (data.looking_glass) {
+      code.textContent = d.prefix;
+      return { text: d.prefix, parts: [code] };
+    });
+    if (a.looking_glass) {
       const li = document.createElement("li");
-      const a = document.createElement("a");
-      a.href = data.looking_glass;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.textContent = "BGP looking glass ↗";
-      li.appendChild(a);
+      const link = document.createElement("a");
+      link.href = a.looking_glass;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "BGP looking glass ↗";
+      li.appendChild(link);
       ul.appendChild(li);
     }
     return ul;
@@ -277,7 +319,10 @@
       if (geoipFallback) geoipFallback.hidden = true;
     }
     if (asnStacks && (asn.ipv4 || asn.ipv6)) {
-      renderPerStack(asnStacks, asn, buildAsnRow, ["asn", "name", "prefix"]);
+      // Merge when ASN + operator match; the prefix line is rendered
+      // per-stack inside buildAsnRow so divergent prefixes get labelled
+      // (IPv4 / IPv6) instead of duplicating the whole card.
+      renderPerStack(asnStacks, asn, buildAsnRow, ["asn", "name"]);
       if (asnFallback) asnFallback.hidden = true;
     }
 
