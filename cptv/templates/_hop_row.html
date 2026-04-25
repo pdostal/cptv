@@ -1,23 +1,27 @@
 {# Single traceroute hop row used by SSE streaming. Rendered server-side so
    the SSE swap is just HTML. The id + hx-swap-oob attribute let later
    emissions for the same hop number replace the existing row in place
-   (true progressive updates). #}
+   (true progressive updates).
+
+   data-label values are picked up by app.css on narrow viewports to
+   render each cell as a label/value pair when the table reflows to a
+   stacked card layout. #}
 {% if hop.ip %}
 <tr id="hop-{{ hop.hop }}" hx-swap-oob="true">
-  <td>{{ hop.hop }}</td>
-  <td><code>{{ hop.ip }}</code></td>
-  <td>{{ hop.rdns or "—" }}</td>
-  <td>
+  <td data-label="Hop">{{ hop.hop }}</td>
+  <td data-label="IP"><code>{{ hop.ip }}</code></td>
+  <td data-label="Hostname">{{ hop.rdns or "—" }}</td>
+  <td data-label="ASN">
     {% if hop.asn %}AS{{ hop.asn }}{% if hop.asn_name %} <small>{{ hop.asn_name }}</small>{% endif %}{% else %}—{% endif %}
   </td>
-  <td>{{ "%.1f"|format(hop.loss_pct) }}%</td>
-  <td>{% if hop.avg_ms is not none %}{{ "%.1f"|format(hop.avg_ms) }}ms{% else %}—{% endif %}</td>
-  <td>{% if hop.best_ms is not none %}{{ "%.1f"|format(hop.best_ms) }}ms{% else %}—{% endif %}</td>
-  <td>{% if hop.worst_ms is not none %}{{ "%.1f"|format(hop.worst_ms) }}ms{% else %}—{% endif %}</td>
+  <td data-label="Loss">{{ "%.1f"|format(hop.loss_pct) }}%</td>
+  <td data-label="Avg">{% if hop.avg_ms is not none %}{{ "%.1f"|format(hop.avg_ms) }}ms{% else %}—{% endif %}</td>
+  <td data-label="Best">{% if hop.best_ms is not none %}{{ "%.1f"|format(hop.best_ms) }}ms{% else %}—{% endif %}</td>
+  <td data-label="Worst">{% if hop.worst_ms is not none %}{{ "%.1f"|format(hop.worst_ms) }}ms{% else %}—{% endif %}</td>
 </tr>
 {% else %}
-<tr id="hop-{{ hop.hop }}" hx-swap-oob="true">
-  <td>{{ hop.hop }}</td>
+<tr id="hop-{{ hop.hop }}" hx-swap-oob="true" class="hop-no-reply">
+  <td data-label="Hop">{{ hop.hop }}</td>
   <td colspan="7"><code>* * *</code> <small>{{ "%.1f"|format(hop.loss_pct) }}% loss</small></td>
 </tr>
 {% endif %}

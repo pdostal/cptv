@@ -1,10 +1,30 @@
 /* First-party overrides for Pico. Keep this file small. */
 
+/* Tells the browser this page handles both schemes natively. Belt-and-
+   braces with the <meta name="darkreader-lock"> in base.html: also
+   discourages Chrome's "Force Dark Mode for Web Contents" and Safari's
+   equivalent from re-tinting our already-themed UI. */
+:root {
+  color-scheme: light dark;
+}
+
 /* Brand prefix shown on secure.<domain>. Pico's blue accent token; Pico
    updates it to the right shade for both light and dark themes, so this
    stays readable without a dark-mode rule. */
 .cptv-brand-prefix {
   color: var(--pico-color-blue-500, #0050b8);
+}
+
+/* IP addresses are long (especially IPv6); allow them to wrap mid-string
+   so they never blow out the article width on phones. */
+code.ip-current,
+#dual-stack code,
+#captive-portal-section code,
+#dns-section code,
+#anycast-section code,
+#resolver-detected code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 article {
@@ -103,5 +123,87 @@ main.container > article:nth-child(7) {
   #traceroute-card.is-running #traceroute-status,
   #traceroute-hops tr.cptv-hop-flash > td {
     animation: none !important;
+  }
+}
+
+/* ---------- responsive traceroute table ---------- */
+
+/* Mid-width fallback: let the table scroll horizontally inside its
+   figure if the screen still has room for table-cell layout. Pico
+   wraps the table in <figure>; we only need the overflow rule. */
+#traceroute-card figure {
+  overflow-x: auto;
+}
+
+/* Phone-narrow viewports: collapse the 8-column table into a stacked
+   card per hop. Each <td> renders as a label/value row using its
+   data-label attribute. The <thead> is hidden because the labels move
+   onto the cells themselves. */
+@media (max-width: 720px) {
+  #traceroute-card table,
+  #traceroute-card thead,
+  #traceroute-card tbody,
+  #traceroute-card tr,
+  #traceroute-card td {
+    display: block;
+    width: 100%;
+  }
+
+  #traceroute-card thead {
+    /* Visually hide but keep accessible to assistive tech. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  #traceroute-card tr {
+    border: 1px solid var(--pico-muted-border-color, #ccc);
+    border-radius: 0.4rem;
+    margin-block: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--pico-card-background-color, transparent);
+  }
+
+  /* Hop row layout: number + IP on top, every other cell as a
+     "label: value" pair below. */
+  #traceroute-card td {
+    border: none;
+    padding: 0.15rem 0;
+    display: grid;
+    grid-template-columns: 5.5rem 1fr;
+    align-items: baseline;
+    column-gap: 0.5rem;
+  }
+
+  #traceroute-card td::before {
+    content: attr(data-label);
+    color: var(--pico-muted-color, #666);
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  /* IP on its own line stays full-width and wraps. */
+  #traceroute-card td[data-label="IP"] code {
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+
+  /* Make non-responding hop rows visually distinct. */
+  #traceroute-card tr.hop-no-reply {
+    opacity: 0.7;
+  }
+
+  /* Smaller IP heading on cramped screens. */
+  code.ip-current {
+    font-size: 1.05rem;
+  }
+
+  /* Trim card chrome so we don't waste horizontal space. */
+  main.container > article {
+    padding-inline: 0.75rem;
   }
 }

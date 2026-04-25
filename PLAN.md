@@ -254,6 +254,10 @@ needs raw sockets to receive ICMP time-exceeded replies.
 - 3-state manual toggle (auto → light → dark) in the navigation bar; choice
   persists in `localStorage` under the key `cptv:theme:v1` and is applied
   before the first paint to avoid a flash of incorrect theme
+- Page declares `color-scheme: light dark` on `:root` and ships a
+  `<meta name="darkreader-lock">` so the Dark Reader extension and
+  browser-native "force dark mode" features stand down — cptv handles
+  both schemes natively and a second-pass tint just makes it muddy
 
 ### 4.12 Quick Links 🔗
 
@@ -299,6 +303,17 @@ CPTV_QUICK_LINKS='[
     is in progress (toggled via the `is-running` class)
   - Short row-flash on each hop the moment its measurements update
 - All animations honour `prefers-reduced-motion: reduce` and switch off
+
+### 4.14 Mobile layout
+
+- Long IPv6 addresses and other code spans wrap mid-string via
+  `overflow-wrap: anywhere`
+- The traceroute table reflows below 720px viewport width: `<thead>` is
+  visually hidden, each `<tr>` becomes a stacked card, and each `<td>`
+  renders its `data-label` attribute as a small uppercase legend so the
+  full per-hop data is readable on a phone without horizontal scrolling
+- Wider intermediate viewports get an `overflow-x: auto` figure as a
+  fallback so the table can still scroll horizontally if it doesn't fit
 
 ---
 

@@ -143,6 +143,8 @@ def test_aggregated_html_renders_sections(client: TestClient):
     assert "/static/vendor/pico.min.css" in body
     assert "/static/vendor/htmx.min.js" in body
     assert "/static/app.js" in body
+    # Dark Reader opt-out signal (we already implement native dark mode).
+    assert '<meta name="darkreader-lock"' in body
 
 
 def test_details_html_adds_request_section(client: TestClient):
