@@ -13,6 +13,7 @@ from cptv.services import clock as clock_service
 from cptv.services import dns as dns_service
 from cptv.services import geoip as geoip_service
 from cptv.services import ip as ip_service
+from cptv.services import redirect_origin as redirect_origin_service
 
 router = APIRouter()
 
@@ -37,6 +38,8 @@ def _collect(request: Request) -> dict:
 
     elapsed = elapsed_ms_so_far(request)
     rtt_ms = round(elapsed, 1) if elapsed is not None else None
+
+    redirect = redirect_origin_service.detect(request, own_host=domain)
 
     return {
         "ip": {
@@ -80,6 +83,13 @@ def _collect(request: Request) -> dict:
             "version": f"HTTP/{http_version}",
             "protocol": forwarded_proto,
             "referrer": request.headers.get("referer"),
+        },
+        "redirect_origin": {
+            "referrer": redirect.referrer,
+            "referrer_host": redirect.referrer_host,
+            "via_header": redirect.via_header,
+            "original_url": redirect.original_url,
+            "looks_like_captive_portal": redirect.looks_like_captive_portal,
         },
         "meta": {
             "server": domain,

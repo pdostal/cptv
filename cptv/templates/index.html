@@ -3,6 +3,33 @@
 = data.asn %} {% set dns = data.dns %} {% set timing = data.timing %} {% set
 http = data.http %} {% set quick_links = data.quick_links %}
 
+{% set redirect = data.redirect_origin %}
+{% if redirect and redirect.looks_like_captive_portal %}
+<article id="captive-portal-section">
+  <header><strong>🔀 Captive portal detected</strong></header>
+  <p>
+    <mark
+      >Your browser appears to have been redirected here, suggesting a
+      captive portal sits between you and the wider internet.</mark
+    >
+  </p>
+  <ul>
+    {% if redirect.referrer %}
+    <li>
+      Referrer: <code>{{ redirect.referrer }}</code>
+      {% if redirect.referrer_host %}<small>(host <code>{{ redirect.referrer_host }}</code>)</small>{% endif %}
+    </li>
+    {% endif %}
+    {% if redirect.original_url %}
+    <li>
+      Original URL (via <code>{{ redirect.via_header }}</code>):
+      <code>{{ redirect.original_url }}</code>
+    </li>
+    {% endif %}
+  </ul>
+</article>
+{% endif %}
+
 <article id="ip-section">
   <header><strong>🌐 IP Address</strong></header>
   {% if ip.current %}

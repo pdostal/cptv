@@ -165,6 +165,59 @@ def test_more_alias(client: TestClient):
     assert "Server:" in r.text
 
 
+def test_aggregated_json_has_redirect_origin(client: TestClient):
+    r = client.get("/", headers={**V4, "Accept": "application/json"})
+    assert r.status_code == 200
+    body = r.json()
+    assert "redirect_origin" in body
+    # Direct hit, no headers — should not look like a captive portal.
+    assert body["redirect_origin"]["looks_like_captive_portal"] is False
+
+
+def test_redirect_origin_via_referer(client: TestClient):
+    r = client.get(
+        "/",
+        headers={
+            **V4,
+            "Accept": "application/json",
+            "Referer": "http://login.airport-wifi.example/portal?dest=http://google.com",
+            "X-Base-Domain": "cptv.example",
+        },
+    )
+    body = r.json()
+    assert body["redirect_origin"]["looks_like_captive_portal"] is True
+    assert body["redirect_origin"]["referrer_host"] == "login.airport-wifi.example"
+
+
+def test_redirect_origin_via_x_original_url(client: TestClient):
+    r = client.get(
+        "/",
+        headers={
+            **V4,
+            "Accept": "application/json",
+            "X-Original-URL": "http://example.com/file.html",
+        },
+    )
+    body = r.json()
+    assert body["redirect_origin"]["looks_like_captive_portal"] is True
+    assert body["redirect_origin"]["via_header"] == "x-original-url"
+    assert body["redirect_origin"]["original_url"] == "http://example.com/file.html"
+
+
+def test_redirect_origin_self_referrer_ignored(client: TestClient):
+    r = client.get(
+        "/",
+        headers={
+            **V4,
+            "Accept": "application/json",
+            "Referer": "http://cptv.example/help",
+            "X-Base-Domain": "cptv.example",
+        },
+    )
+    body = r.json()
+    assert body["redirect_origin"]["looks_like_captive_portal"] is False
+
+
 def test_aggregated_json_has_rtt_ms(client: TestClient):
     r = client.get("/", headers={**V4, "Accept": "application/json"})
     assert r.status_code == 200
