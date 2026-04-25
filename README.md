@@ -2,7 +2,7 @@
 
 Self-hosted, nerdy network diagnostics. Shows visitors detailed real-time info about their connection — IP, geolocation, ASN, DNS, traceroute, clock skew, DNSSEC validation.
 
-Served over plain HTTP on purpose so captive portals (hotel Wi-Fi, airport networks) can intercept and redirect it. The `secure.<domain>` prefix has TLS enforced; `ipv4.<domain>` and `ipv6.<domain>` are protocol-forcing endpoints.
+Served over plain HTTP on purpose so captive portals (hotel Wi-Fi, airport networks) can intercept and redirect it. The `secure.<domain>` prefix has TLS enforced; `ipv4.<domain>` and `ipv6.<domain>` are protocol-forcing endpoints reachable over both HTTP and HTTPS so the dual-stack probe works from either context.
 
 The application is **domain-agnostic** — nothing about `cptv.cz` is hardcoded. The base domain is read from the `X-Base-Domain` nginx header at request time. See `PLAN.md` for the full specification.
 
@@ -197,6 +197,28 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
 
     return 301 http://$host$request_uri;
+}
+
+# ---- ipv4. / ipv6.: HTTPS mirror of the HTTP server above ----
+# The home page on secure.<domain> probes ipv4./ipv6. via JavaScript.
+# Without HTTPS here the browser blocks those requests as mixed content
+# and the dual-stack section silently stays blank. Both names share the
+# same Let's Encrypt certificate (see Certbot section below).
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ipv4.cptv.example.com ipv6.cptv.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Base-Domain     $host_base_domain;
+        proxy_set_header   X-Forwarded-For   $remote_addr;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+    }
 }
 
 # ---- secure.<domain>: HTTP → HTTPS redirect ----
