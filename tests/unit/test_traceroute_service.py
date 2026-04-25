@@ -156,16 +156,21 @@ class TestRunMtr:
             await run_mtr(ipaddress.ip_address("8.8.8.8"))
 
     @pytest.mark.asyncio
-    async def test_mtr_nonzero_exit(self):
+    async def test_mtr_nonzero_exit(self, caplog):
+        """mtr's raw stderr is logged but not surfaced to the client."""
+        import logging
+
         mock_proc = AsyncMock()
         mock_proc.returncode = 1
         mock_proc.communicate = AsyncMock(return_value=(b"", b"permission denied"))
 
+        caplog.set_level(logging.WARNING, logger="cptv.services.traceroute")
         with (
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-            pytest.raises(TracerouteError, match="permission denied"),
+            pytest.raises(TracerouteError, match="^traceroute failed$"),
         ):
             await run_mtr(ipaddress.ip_address("8.8.8.8"))
+        assert any("permission denied" in rec.message for rec in caplog.records)
 
     @pytest.mark.asyncio
     async def test_mtr_unreachable_translates_cleanly(self):

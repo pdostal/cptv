@@ -90,15 +90,19 @@ def _translate_mtr_error(stderr: str, target: IPAddress) -> Exception:
     Specifically, ``Network is unreachable`` from the kernel via mtr-packet
     means there is no route to ``target``'s family from this host. Surface
     that as :class:`TracerouteUnreachableError` so callers (and the SSE
-    stream) can render a friendly message instead of a stack trace.
+    stream) can render a friendly fixed-shape message instead of leaking
+    mtr internals or stack traces.
+
+    The fallback path logs mtr's raw stderr at ``warning`` level (operators
+    get the detail) but raises a generic :class:`TracerouteError` whose
+    message is a fixed string (clients get no implementation detail).
     """
     lower = stderr.lower()
     family = "IPv6" if isinstance(target, ipaddress.IPv6Address) else "IPv4"
     if "network is unreachable" in lower or "no route to host" in lower:
-        return TracerouteUnreachableError(
-            f"no {family} route to {target} from this host (check container networking)"
-        )
-    return TracerouteError(f"mtr failed: {stderr.strip()}")
+        return TracerouteUnreachableError(f"no {family} route from this host")
+    log.warning("mtr stderr (%s): %s", target, stderr.strip())
+    return TracerouteError("traceroute failed")
 
 
 # Lazily-initialised process-wide semaphore. Created on first use so the
