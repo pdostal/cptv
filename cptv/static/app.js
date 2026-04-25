@@ -412,10 +412,18 @@
     );
     for (const entry of sorted) {
       const li = document.createElement("li");
+      // Build with text nodes / setAttribute so localStorage content can never
+      // be reinterpreted as HTML (CodeQL js/xss-through-dom).
+      const code = document.createElement("code");
+      code.textContent = String(entry.ip || "");
+      const small = document.createElement("small");
       const proto = entry.protocol ? ` (${entry.protocol})` : "";
       const seenN = entry.count > 1 ? ` · seen ${entry.count}\u00d7` : "";
-      const last = entry.last_seen ? entry.last_seen.replace("T", " ").replace("Z", "Z") : "?";
-      li.innerHTML = `<code>${entry.ip}</code><small>${proto}${seenN} · last ${last}</small>`;
+      const last = entry.last_seen ? String(entry.last_seen).replace("T", " ") : "?";
+      small.textContent = `${proto}${seenN} · last ${last}`;
+      li.appendChild(code);
+      li.appendChild(document.createTextNode(" "));
+      li.appendChild(small);
       list.appendChild(li);
     }
   }
