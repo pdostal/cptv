@@ -50,14 +50,16 @@ def test_apex_host_returns_aggregated_not_single_stack(client: TestClient):
     )
     assert r.status_code == 200
     assert "203.0.113.42" in r.text
-    # Aggregated text output includes IP + RTT + Server lines;
+    # Aggregated text output includes the IP block + RTT line;
     # single-stack endpoints return just the bare IP.
     assert "RTT:" in r.text
-    assert "Server:" in r.text
-    # DNSSEC + Resolver + Time deliberately absent from curl output.
+    # DNSSEC + Resolver + Time + Server + HTTP version deliberately
+    # absent from curl output (browser-only, or noise in scripts).
     assert "Resolver" not in r.text
     assert "DNSSEC" not in r.text
     assert "Time:" not in r.text
+    assert "Server:" not in r.text
+    assert "HTTP:" not in r.text
 
 
 def test_subdomain_detection_ignores_port(client: TestClient):

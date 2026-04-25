@@ -121,16 +121,14 @@ def _collect(request: Request) -> dict:
 def _text_aggregated(data: dict) -> str:
     """Plain-text aggregated output for curl users.
 
-    Skips DNSSEC, Resolver and the server-side timestamp because they're
-    either browser-only (DNSSEC) or not useful in scripts (timestamps —
-    use the host's own clock). Keeps IP, GeoIP, ASN, RTT, HTTP version
-    and Server identity.
+    Skips DNSSEC, Resolver and the server-side timestamp (browser-only
+    or not useful in scripts), HTTP version, and the Server identity
+    line (visible to anyone who already knows where they sent the
+    request). Keeps IP, GeoIP, ASN, and the RTT diagnostic.
     """
     ip = data["ip"]
     geo = data["geoip"]
     asn = data["asn"]
-    http = data["http"]
-    meta = data["meta"]
 
     lines: list[str] = []
 
@@ -162,9 +160,9 @@ def _text_aggregated(data: dict) -> str:
 
     rtt = data["timing"].get("rtt_ms")
     if rtt is not None:
-        lines.append(f"⏱️  RTT:       {rtt}ms (server-side handling)")
-    lines.append(f"   HTTP:      {http['version']}")
-    lines.append(f"   Server:    {meta['server']}  ({meta['repo']})")
+        # One leading space (not two) after the ⏱️ emoji so 'RTT' aligns
+        # vertically with 'IP', 'Country', 'ASN' on their lines.
+        lines.append(f"⏱️ RTT:       {rtt}ms (server-side handling)")
 
     return "\n".join(lines)
 

@@ -178,12 +178,11 @@ http = data.http %} {% set quick_links = data.quick_links %}
       <small>Resolver detection probe requires JavaScript.</small>
     </p>
   </noscript>
-  <p>
-    DNSSEC validation:
-    <span id="dnssec-status" aria-live="polite">⚪ checking…</span>
-  </p>
   <details>
-    <summary>How is this tested?</summary>
+    {# The "DNSSEC validation" label IS the disclosure trigger. Click
+       it to expand the methodology paragraph. The badge with the
+       verdict stays visible alongside the (now-clickable) label. #}
+    <summary>DNSSEC validation</summary>
     <p>
       <small>
         Tested by loading an image from
@@ -199,6 +198,9 @@ http = data.http %} {% set quick_links = data.quick_links %}
       </small>
     </p>
   </details>
+  <p>
+    <span id="dnssec-status" aria-live="polite">⚪ checking…</span>
+  </p>
   <noscript
     ><small>DNSSEC validation check requires JavaScript.</small></noscript
   >
