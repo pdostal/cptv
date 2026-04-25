@@ -132,6 +132,159 @@
     }
   }
 
+  // ---------- per-stack ASN/GeoIP enrichment ----------
+  // Once dual-stack discovery has the IPs, fetch /asn and /geoip from
+  // both ipv4. and ipv6. so the GeoIP and ASN cards can show fresh
+  // data per family. Equal values render once; differing values render
+  // both labelled by stack.
+  async function fetchStack(stack, base, port, path) {
+    const url = `//${stack}.${base}${port}${path}?format=json`;
+    try {
+      const resp = await fetch(url, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch {
+      return null;
+    }
+  }
+
+  // Render either a single merged row (when both stacks agree) or one
+  // row per stack into a target container. The row builder receives
+  // the data dict and returns a DocumentFragment.
+  function renderPerStack(target, perStack, rowBuilder, equalKeys) {
+    if (!target) return;
+    target.replaceChildren();
+    target.hidden = false;
+
+    const ipv4 = perStack.ipv4;
+    const ipv6 = perStack.ipv6;
+
+    if (!ipv4 && !ipv6) {
+      target.hidden = true;
+      return;
+    }
+
+    const equal =
+      ipv4 &&
+      ipv6 &&
+      equalKeys.every((k) => JSON.stringify(ipv4[k]) === JSON.stringify(ipv6[k]));
+
+    if (ipv4 && ipv6 && equal) {
+      target.appendChild(rowBuilder(ipv4, "both"));
+    } else {
+      if (ipv4) target.appendChild(rowBuilder(ipv4, "IPv4"));
+      if (ipv6) target.appendChild(rowBuilder(ipv6, "IPv6"));
+    }
+  }
+
+  function buildGeoipRow(data, label) {
+    const ul = document.createElement("ul");
+    if (label !== "both") {
+      const head = document.createElement("li");
+      head.innerHTML = `<strong>${label}</strong>`;
+      ul.appendChild(head);
+    }
+    const country = document.createElement("li");
+    country.textContent = `Country: ${data.country_code || "?"} ${data.country || ""}`.trimEnd();
+    ul.appendChild(country);
+    if (data.region) {
+      const li = document.createElement("li");
+      li.textContent = `Region: ${data.region}`;
+      ul.appendChild(li);
+    }
+    const city = document.createElement("li");
+    city.textContent = `City: ${data.city || "—"}`;
+    ul.appendChild(city);
+    if (data.latitude != null && data.longitude != null) {
+      const c = document.createElement("li");
+      c.textContent = `Coords: ${data.latitude.toFixed(4)}, ${data.longitude.toFixed(4)}`;
+      ul.appendChild(c);
+    }
+    return ul;
+  }
+
+  function buildAsnRow(data, label) {
+    const ul = document.createElement("ul");
+    if (label !== "both") {
+      const head = document.createElement("li");
+      head.innerHTML = `<strong>${label}</strong>`;
+      ul.appendChild(head);
+    }
+    const asn = document.createElement("li");
+    asn.innerHTML = `ASN: <strong>AS${data.asn}</strong>`;
+    ul.appendChild(asn);
+    if (data.name) {
+      const li = document.createElement("li");
+      li.textContent = `Operator: ${data.name}`;
+      ul.appendChild(li);
+    }
+    if (data.prefix) {
+      const li = document.createElement("li");
+      const code = document.createElement("code");
+      code.textContent = data.prefix;
+      li.append("Prefix: ", code);
+      ul.appendChild(li);
+    }
+    if (data.looking_glass) {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = data.looking_glass;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = "BGP looking glass ↗";
+      li.appendChild(a);
+      ul.appendChild(li);
+    }
+    return ul;
+  }
+
+  async function enrichDualStackInfo() {
+    const host = window.location.hostname;
+    if (!host || host === "localhost" || host === "127.0.0.1") return;
+    const base = getBaseDomain();
+    const port = window.location.port ? `:${window.location.port}` : "";
+
+    const [g4, g6, a4, a6] = await Promise.all([
+      fetchStack("ipv4", base, port, "/geoip"),
+      fetchStack("ipv6", base, port, "/geoip"),
+      fetchStack("ipv4", base, port, "/asn"),
+      fetchStack("ipv6", base, port, "/asn"),
+    ]);
+
+    // Treat all-null GeoIP as "no data" so we don't render an empty row.
+    const haveData = (d) =>
+      d &&
+      Object.values(d).some((v) => v !== null && v !== undefined && v !== "");
+
+    const geoipStacks = qs("#geoip-stacks");
+    const geoipFallback = qs("#geoip-fallback");
+    const asnStacks = qs("#asn-stacks");
+    const asnFallback = qs("#asn-fallback");
+
+    const geo = { ipv4: haveData(g4) ? g4 : null, ipv6: haveData(g6) ? g6 : null };
+    const asn = { ipv4: haveData(a4) ? a4 : null, ipv6: haveData(a6) ? a6 : null };
+
+    if (geoipStacks && (geo.ipv4 || geo.ipv6)) {
+      renderPerStack(geoipStacks, geo, buildGeoipRow, [
+        "country_code",
+        "country",
+        "region",
+        "city",
+      ]);
+      if (geoipFallback) geoipFallback.hidden = true;
+    }
+    if (asnStacks && (asn.ipv4 || asn.ipv6)) {
+      renderPerStack(asnStacks, asn, buildAsnRow, ["asn", "name", "prefix"]);
+      if (asnFallback) asnFallback.hidden = true;
+    }
+
+    // Hand the freshly-fetched per-stack info to the history tracker.
+    return { geo, asn };
+  }
+
   // ---------- DNSSEC probe ----------
   // Loads an image from rhybar.cz (intentionally signed with an invalid
   // DNSSEC signature by CZ.NIC) and from a control host. If only the
@@ -676,16 +829,22 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  document.addEventListener("DOMContentLoaded", async () => {
     checkClockSkew();
-    detectDualStack();
     checkDnssec();
     wireGeolocationButton();
-    trackHistory();
     wireHistoryClearButton();
     detectAnycastPop();
     detectResolver();
-    wireTracerouteWhenStacksKnown();
     wireThemeToggle();
+    renderHistory(); // Always render the history card from cached entries.
+
+    // detectDualStack must finish before per-stack enrichment fires so we
+    // know which IPs to enrich. Enrichment then feeds the history tracker
+    // with fresh ASN/city values for each stack's IP.
+    await detectDualStack();
+    const enriched = await enrichDualStackInfo();
+    trackHistory(enriched);
+    wireTracerouteWhenStacksKnown();
   });
 })();

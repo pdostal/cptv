@@ -64,23 +64,38 @@ http = data.http %} {% set quick_links = data.quick_links %}
 
 <article id="geoip-section">
   <header><strong>🌍 Geolocation</strong></header>
-  {% if geo %}
-  <ul>
-    <li>
-      Country: <strong>{{ geo.country_code or '?' }}</strong> {{ geo.country or
-      '' }}
-    </li>
-    {% if geo.region %}
-    <li>Region: {{ geo.region }}</li>
+  {# Per-stack rows; JS fills in fresh data fetched from
+     //ipv4.<base>/geoip and //ipv6.<base>/geoip after the dual-stack
+     probe knows the IPs. The SSR fallback below shows the current
+     connection only and gets hidden once JS takes over. #}
+  <div id="geoip-stacks" hidden></div>
+  <div id="geoip-fallback">
+    {% if geo %}
+    <ul>
+      <li>
+        Country: <strong>{{ geo.country_code or '?' }}</strong> {{ geo.country or
+        '' }}
+      </li>
+      {% if geo.region %}
+      <li>Region: {{ geo.region }}</li>
+      {% endif %}
+      <li>City: {{ geo.city or '—' }}</li>
+      {% if geo.latitude is not none and geo.longitude is not none %}
+      <li>
+        Coords: {{ "%.4f"|format(geo.latitude) }}, {{ "%.4f"|format(geo.longitude)
+        }}
+      </li>
+      {% endif %}
+    </ul>
+    {% else %}
+    <p>
+      <small
+        >Geolocation unavailable (private IP or GeoLite2 database not
+        loaded).</small
+      >
+    </p>
     {% endif %}
-    <li>City: {{ geo.city or '—' }}</li>
-    {% if geo.latitude is not none and geo.longitude is not none %}
-    <li>
-      Coords: {{ "%.4f"|format(geo.latitude) }}, {{ "%.4f"|format(geo.longitude)
-      }}
-    </li>
-    {% endif %}
-  </ul>
+  </div>
   <details>
     <summary>Compare with your browser's geolocation</summary>
     <button type="button" id="request-geolocation">
@@ -88,43 +103,38 @@ http = data.http %} {% set quick_links = data.quick_links %}
     </button>
     <p id="browser-location"><small>Not requested.</small></p>
   </details>
-  {% else %}
-  <p>
-    <small
-      >Geolocation unavailable (private IP or GeoLite2 database not
-      loaded).</small
-    >
-  </p>
-  {% endif %}
 </article>
 
 <article id="asn-section">
   <header><strong>🔌 ASN / Network</strong></header>
-  {% if asn %}
-  <ul>
-    <li>ASN: <strong>AS{{ asn.number }}</strong></li>
-    {% if asn.name %}
-    <li>Operator: {{ asn.name }}</li>
-    {% endif %} {% if asn.prefix %}
-    <li>Prefix: <code>{{ asn.prefix }}</code></li>
-    {% endif %}
-    <li>
-      <a
-        href="{{ asn.looking_glass }}"
-        target="_blank"
-        rel="noopener noreferrer"
-        >BGP looking glass ↗</a
+  <div id="asn-stacks" hidden></div>
+  <div id="asn-fallback">
+    {% if asn %}
+    <ul>
+      <li>ASN: <strong>AS{{ asn.number }}</strong></li>
+      {% if asn.name %}
+      <li>Operator: {{ asn.name }}</li>
+      {% endif %} {% if asn.prefix %}
+      <li>Prefix: <code>{{ asn.prefix }}</code></li>
+      {% endif %}
+      <li>
+        <a
+          href="{{ asn.looking_glass }}"
+          target="_blank"
+          rel="noopener noreferrer"
+          >BGP looking glass ↗</a
+        >
+      </li>
+    </ul>
+    {% else %}
+    <p>
+      <small
+        >ASN data unavailable (private IP or GeoLite2 ASN database not
+        loaded).</small
       >
-    </li>
-  </ul>
-  {% else %}
-  <p>
-    <small
-      >ASN data unavailable (private IP or GeoLite2 ASN database not
-      loaded).</small
-    >
-  </p>
-  {% endif %}
+    </p>
+    {% endif %}
+  </div>
 </article>
 
 <article id="anycast-section">

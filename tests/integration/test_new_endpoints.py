@@ -159,6 +159,9 @@ def test_aggregated_html_renders_sections(client: TestClient):
     assert 'id="traceroute-section"' in body
     assert 'id="anycast-section"' in body
     assert 'id="request-section"' in body  # request inspection (was /details)
+    # Per-stack enrichment placeholders for the GeoIP / ASN cards.
+    assert 'id="geoip-stacks"' in body
+    assert 'id="asn-stacks"' in body
     assert 'id="ip-history"' in body
     assert 'id="anycast-results"' in body
     assert "/static/vendor/pico.min.css" in body
