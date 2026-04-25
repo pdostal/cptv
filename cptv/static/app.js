@@ -158,6 +158,57 @@
     }, 8000);
   }
 
+  // ---------- anycast PoP detection ----------
+  // Cloudflare's /cdn-cgi/trace returns plaintext key=value lines including
+  // a `colo=` field naming the airport-style PoP code that served you. This
+  // gives a quick read on which Cloudflare datacenter your network reaches.
+  async function detectAnycastPop() {
+    const list = qs("#anycast-results");
+    if (!list) return;
+    list.innerHTML = "";
+
+    const probes = [
+      {
+        name: "Cloudflare",
+        url: "https://1.1.1.1/cdn-cgi/trace",
+        parse: (text) => {
+          const map = {};
+          for (const line of text.split("\n")) {
+            const idx = line.indexOf("=");
+            if (idx > 0) map[line.slice(0, idx)] = line.slice(idx + 1).trim();
+          }
+          if (!map.colo) return null;
+          const parts = [`PoP <code>${map.colo}</code>`];
+          if (map.loc) parts.push(`country <code>${map.loc}</code>`);
+          if (map.ip) parts.push(`seen as <code>${map.ip}</code>`);
+          return parts.join(" · ");
+        },
+      },
+    ];
+
+    for (const probe of probes) {
+      const li = document.createElement("li");
+      li.innerHTML = `<strong>${probe.name}</strong>: <small>checking…</small>`;
+      list.appendChild(li);
+      try {
+        const resp = await fetch(probe.url, { cache: "no-store" });
+        if (!resp.ok) {
+          li.innerHTML = `<strong>${probe.name}</strong>: <small>HTTP ${resp.status}</small>`;
+          continue;
+        }
+        const text = await resp.text();
+        const summary = probe.parse(text);
+        if (summary) {
+          li.innerHTML = `<strong>${probe.name}</strong>: ${summary}`;
+        } else {
+          li.innerHTML = `<strong>${probe.name}</strong>: <small>no PoP info in response</small>`;
+        }
+      } catch (err) {
+        li.innerHTML = `<strong>${probe.name}</strong>: <small>unreachable (${err.message || "error"})</small>`;
+      }
+    }
+  }
+
   // ---------- session history (localStorage, never sent to server) ----------
   const HISTORY_KEY = "cptv:history:v1";
 
@@ -289,5 +340,6 @@
     wireGeolocationButton();
     trackHistory();
     wireHistoryClearButton();
+    detectAnycastPop();
   });
 })();

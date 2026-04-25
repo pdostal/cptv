@@ -94,6 +94,22 @@ http = data.http %} {% set quick_links = data.quick_links %}
   {% endif %}
 </article>
 
+<article id="anycast-section">
+  <header><strong>📡 Anycast PoP</strong></header>
+  <p>
+    <small
+      >Which anycast point-of-presence your network reaches for popular
+      providers. Probed client-side; nothing is sent to this server.</small
+    >
+  </p>
+  <ul id="anycast-results">
+    <li><small>Loading…</small></li>
+  </ul>
+  <noscript
+    ><p><small>JavaScript required for anycast PoP detection.</small></p></noscript
+  >
+</article>
+
 <article id="dns-section">
   <header><strong>🔎 DNS &amp; DNSSEC</strong></header>
   {% if dns.resolver_ip %}

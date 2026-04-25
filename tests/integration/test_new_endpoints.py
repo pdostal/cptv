@@ -137,7 +137,9 @@ def test_aggregated_html_renders_sections(client: TestClient):
     assert 'id="timing-section"' in body
     assert 'id="history-section"' in body
     assert 'id="traceroute-section"' in body
+    assert 'id="anycast-section"' in body
     assert 'id="ip-history"' in body
+    assert 'id="anycast-results"' in body
     assert "/static/vendor/pico.min.css" in body
     assert "/static/vendor/htmx.min.js" in body
     assert "/static/app.js" in body
