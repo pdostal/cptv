@@ -296,10 +296,17 @@
       if (existing) existing.replaceWith(row);
       else tbody.appendChild(row);
       // Briefly flash the row to draw the eye to fresh measurements.
-      row.classList.add("cptv-hop-flash");
-      // Reflow to restart the animation reliably.
-      void row.offsetWidth;
-      window.setTimeout(() => row.classList.remove("cptv-hop-flash"), 700);
+      // Use double rAF to schedule the class add after the next paint
+      // so we don't force layout (Firefox warns "Layout was forced
+      // before the page was fully loaded" if we read offsetWidth here
+      // mid-load) and the keyframe restarts cleanly.
+      row.classList.remove("cptv-hop-flash");
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          row.classList.add("cptv-hop-flash");
+          window.setTimeout(() => row.classList.remove("cptv-hop-flash"), 700);
+        });
+      });
     };
 
     card.classList.add("is-running");
