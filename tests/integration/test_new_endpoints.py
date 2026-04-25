@@ -161,6 +161,26 @@ def test_details_endpoints_are_gone(client: TestClient):
         assert r.status_code == 404, path
 
 
+def test_text_hint_appended_on_aggregated(client: TestClient):
+    """Plain-text aggregated output ends with a hint pointing at JSON."""
+    r = client.get("/", headers=_headers(V4, CURL))
+    assert r.status_code == 200
+    assert "tip: append ?format=json" in r.text
+
+
+def test_text_hint_omitted_on_bare_ip_endpoints(client: TestClient):
+    """Bare-IP echoes stay clean for shell scripting."""
+    for path in ("/ip", "/ipv4", "/ip4", "/4", "/isp"):
+        r = client.get(path, headers=_headers(V4, CURL))
+        assert "tip:" not in r.text, path
+
+
+def test_curl_howto_card_on_home(client: TestClient):
+    r = client.get("/", headers={**V4, "Accept": "text/html"})
+    assert 'id="curl-howto-section"' in r.text
+    assert "curl ipv4." in r.text
+
+
 def test_aggregated_json_has_redirect_origin(client: TestClient):
     r = client.get("/", headers={**V4, "Accept": "application/json"})
     assert r.status_code == 200

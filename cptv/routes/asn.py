@@ -74,6 +74,7 @@ def _register(templates: Jinja2Templates) -> APIRouter:
             html_context={"heading": "ISP", "data": json_data, "present": result is not None},
             json_data=json_data,
             text=text,
+            text_hint=False,  # /isp is meant for shell scripts.
         )
 
     return router
