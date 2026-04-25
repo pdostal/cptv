@@ -3,6 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {# Tells Dark Reader to stay out of the way: cptv already implements
+       native dark mode via Pico CSS + prefers-color-scheme + the
+       in-page theme toggle. See https://github.com/darkreader/darkreader
+       for the documented opt-out signal. #}
+    <meta name="darkreader-lock" />
     <title>{% block title %}cptv — network diagnostics{% endblock title %}</title>
     <meta
       name="description"
@@ -16,7 +21,15 @@
       <nav>
         <ul>
           <li>
-            <strong>cptv</strong> <small>— CaPTiVe network diagnostics</small>
+            {% set _sub = request.state.subdomain if request else none %}
+            <strong>
+              {%- if _sub == "secure" -%}
+                <span class="cptv-brand-prefix">secure.</span>cptv
+              {%- else -%}
+                cptv
+              {%- endif -%}
+            </strong>
+            <small>— CaPTiVe network diagnostics</small>
           </li>
         </ul>
         <ul>

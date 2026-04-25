@@ -115,6 +115,16 @@ class TestTracerouteHTML:
         assert "AS1234" in r.text
         assert "* * *" in r.text
 
+    def test_hop_cells_carry_data_labels_for_mobile(self, client: TestClient):
+        """Mobile CSS uses data-label attributes to render the table as cards."""
+        with _patch_mtr():
+            r = client.get(
+                "/traceroute",
+                headers={**V4, "Accept": "text/html"},
+            )
+        for label in ("Hop", "IP", "Hostname", "ASN", "Loss", "Avg", "Best", "Worst"):
+            assert f'data-label="{label}"' in r.text, label
+
 
 class TestTracerouteJSON:
     def test_json_endpoint(self, client: TestClient):

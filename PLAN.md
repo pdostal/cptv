@@ -91,12 +91,21 @@ proxy_set_header X-Forwarded-Proto $scheme;
 - Clearly indicate which protocol is active and which is preferred
 - Link to the forcing subdomains so users can test each protocol explicitly
 - The `ipv4.<domain>` and `ipv6.<domain>` subdomains also behave as dedicated single-purpose endpoints — when curled they return just the raw IP address in plain text, useful for scripting
+- The IP echo endpoints (`/ip`, `/ipv4`, `/ip4`, `/4`, `/ipv6`, `/ip6`, `/6` and their `/api/v1/` variants) emit `Access-Control-Allow-Origin: *` and `Cache-Control: no-store` so the home page's cross-origin dual-stack probe can read the body. CORS is **not** enabled on other endpoints.
 
 ### 4.2 Geolocation 🌍
 
 - Country, region, city — queried server-side from the **MaxMind GeoLite2 City** database baked into the image
 - Approximate coordinates shown as a map when JS is available, plain text otherwise
 - Small opt-in **"Show my real location"** button triggers the browser Geolocation API (client-side JS); if granted, shown alongside the GeoIP result for comparison
+- Browsers block `navigator.geolocation` on insecure origins, and the apex
+  `<domain>` is intentionally HTTP. When the JS detects
+  `!window.isSecureContext`, the button becomes a deep link that
+  navigates to `https://secure.<domain>/?ask-location=1`. The secure
+  page recognises that query parameter, auto-triggers the geolocation
+  prompt at load, and renders the coordinates on the secure page itself.
+  Visiting `secure.<domain>` directly without the query parameter never
+  prompts — the API is only invoked on an explicit user gesture.
 
 ### 4.3 ASN / Network Information 🔌
 
@@ -190,7 +199,22 @@ RFC1918 and CGNAT (`100.64.0.0/10`) ranges show a contextual warning ⚠️. Tra
 RUN setcap cap_net_raw+ep /usr/bin/mtr-packet
 ```
 
-Quadlet unit does **not** need `AddCapability=CAP_NET_RAW`. UDP mode does not eliminate this requirement.
+In **rootful** Podman / Docker the file capability is honoured and the
+container needs no extra flags.
+
+In **rootless** Podman the file capability is dropped when the binary
+runs inside an unprivileged user namespace, so `mtr-packet` fails to
+open raw sockets and the parent reports
+`mtr: Failure to start mtr-packet: Invalid argument`. The Quadlet must
+add the capability explicitly:
+
+```ini
+[Container]
+AddCapability=CAP_NET_RAW
+```
+
+UDP mode does not eliminate this requirement either; `mtr-packet` still
+needs raw sockets to receive ICMP time-exceeded replies.
 
 ### 4.7 Timing & Clock ⏱️
 
@@ -230,6 +254,10 @@ Quadlet unit does **not** need `AddCapability=CAP_NET_RAW`. UDP mode does not el
 - 3-state manual toggle (auto → light → dark) in the navigation bar; choice
   persists in `localStorage` under the key `cptv:theme:v1` and is applied
   before the first paint to avoid a flash of incorrect theme
+- Page declares `color-scheme: light dark` on `:root` and ships a
+  `<meta name="darkreader-lock">` so the Dark Reader extension and
+  browser-native "force dark mode" features stand down — cptv handles
+  both schemes natively and a second-pass tint just makes it muddy
 
 ### 4.12 Quick Links 🔗
 
@@ -275,6 +303,17 @@ CPTV_QUICK_LINKS='[
     is in progress (toggled via the `is-running` class)
   - Short row-flash on each hop the moment its measurements update
 - All animations honour `prefers-reduced-motion: reduce` and switch off
+
+### 4.14 Mobile layout
+
+- Long IPv6 addresses and other code spans wrap mid-string via
+  `overflow-wrap: anywhere`
+- The traceroute table reflows below 720px viewport width: `<thead>` is
+  visually hidden, each `<tr>` becomes a stacked card, and each `<td>`
+  renders its `data-label` attribute as a small uppercase legend so the
+  full per-hop data is readable on a phone without horizontal scrolling
+- Wider intermediate viewports get an `overflow-x: auto` figure as a
+  fallback so the table can still scroll horizontally if it doesn't fit
 
 ---
 

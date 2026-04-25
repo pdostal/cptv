@@ -5,7 +5,7 @@ import ipaddress
 from fastapi import APIRouter, Request, Response
 from fastapi.templating import Jinja2Templates
 
-from cptv.negotiation import respond
+from cptv.negotiation import add_public_cors, respond
 from cptv.services import ip as ip_service
 
 router = APIRouter()
@@ -17,22 +17,26 @@ def _register(templates: Jinja2Templates) -> APIRouter:
     def current_ip(request: Request) -> Response:
         address = ip_service.client_ip(request)
         if address is None:
-            return respond(
+            return add_public_cors(
+                respond(
+                    request,
+                    templates=templates,
+                    html_template="ip.html",
+                    html_context={"heading": "Your IP", "value": None},
+                    json_data={"ip": None, "protocol": None},
+                    text="",
+                )
+            )
+        classified = ip_service.classify(address)
+        return add_public_cors(
+            respond(
                 request,
                 templates=templates,
                 html_template="ip.html",
-                html_context={"heading": "Your IP", "value": None},
-                json_data={"ip": None, "protocol": None},
-                text="",
+                html_context={"heading": "Your IP", "value": classified.text},
+                json_data={"ip": classified.text, "protocol": classified.protocol},
+                text=classified.text,
             )
-        classified = ip_service.classify(address)
-        return respond(
-            request,
-            templates=templates,
-            html_template="ip.html",
-            html_context={"heading": "Your IP", "value": classified.text},
-            json_data={"ip": classified.text, "protocol": classified.protocol},
-            text=classified.text,
         )
 
     def _single_stack(request: Request, version: int) -> Response:
@@ -41,13 +45,15 @@ def _register(templates: Jinja2Templates) -> APIRouter:
         key = f"ipv{version}"
         value = str(address) if isinstance(address, ip_cls) else None
         heading = f"Your IPv{version}"
-        return respond(
-            request,
-            templates=templates,
-            html_template="ip.html",
-            html_context={"heading": heading, "value": value},
-            json_data={key: value},
-            text=value or "",
+        return add_public_cors(
+            respond(
+                request,
+                templates=templates,
+                html_template="ip.html",
+                html_context={"heading": heading, "value": value},
+                json_data={key: value},
+                text=value or "",
+            )
         )
 
     @router.get("/ipv4")

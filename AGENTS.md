@@ -51,7 +51,7 @@ Run all from the repository root.
 
 - Container images are built with `podman` (Containerfile, not Dockerfile). CI uses `docker/build-push-action` with buildx.
 - GeoLite2 MMDBs are NOT in the image. They are bind-mounted from the host at `/app/vendor/geolite2/`.
-- `mtr-packet` needs `cap_net_raw` set in the image; do not assume the runtime container or Quadlet needs extra capability flags.
+- `mtr-packet` needs `cap_net_raw`. The image sets it via `setcap cap_net_raw+ep`. **Rootless Podman drops file capabilities in the user namespace**, so the production Quadlet must `AddCapability=CAP_NET_RAW`; rootful runs do not need this.
 - `CPTV_QUICK_LINKS` is a JSON array env var; unset or empty hides the section.
 - `CPTV_GEOIP_CITY_DB` and `CPTV_GEOIP_ASN_DB` default to `/app/vendor/geolite2/` paths; the DBs must be bind-mounted.
 - `CPTV_VALKEY_HOST` and `CPTV_VALKEY_PORT` configure the Valkey connection (defaults: `localhost:6379`).

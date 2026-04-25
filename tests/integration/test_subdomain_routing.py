@@ -77,3 +77,47 @@ def test_subdomain_does_not_rewrite_other_paths(client: TestClient):
         )
     assert r.status_code == 200
     assert r.json()["status"] in ("ok", "degraded")
+
+
+def test_secure_subdomain_does_not_rewrite_root(client: TestClient):
+    """secure.<domain>/ must serve the full home page, not bare IPv4 / IPv6."""
+    r = client.get(
+        "/",
+        headers={
+            **FWD_V4,
+            **BASE_DOMAIN,
+            "Host": "secure.example.test",
+            "Accept": "text/html",
+        },
+    )
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="ip-section"' in body, "should render full home page, not bare IP"
+
+
+def test_secure_subdomain_brand_prefix_in_header(client: TestClient):
+    r = client.get(
+        "/",
+        headers={
+            **FWD_V4,
+            **BASE_DOMAIN,
+            "Host": "secure.example.test",
+            "Accept": "text/html",
+        },
+    )
+    body = r.text
+    assert '<span class="cptv-brand-prefix">secure.</span>cptv' in body
+
+
+def test_apex_does_not_show_brand_prefix(client: TestClient):
+    r = client.get(
+        "/",
+        headers={
+            **FWD_V4,
+            **BASE_DOMAIN,
+            "Host": "example.test",
+            "Accept": "text/html",
+        },
+    )
+    body = r.text
+    assert "cptv-brand-prefix" not in body

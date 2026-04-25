@@ -106,6 +106,11 @@ Image=ghcr.io/pdostal/cptv:latest
 ContainerName=cptv
 Pod=cptv.pod
 Volume=%h/.local/share/cptv/geolite2:/app/vendor/geolite2:ro,z
+# mtr-packet uses raw ICMP sockets. Rootless Podman does not honour the
+# file capability set on the binary inside the image, so the cap must
+# be granted to the container explicitly. Without this you'll see
+# "mtr-packet: Failure to start mtr-packet: Invalid argument".
+AddCapability=CAP_NET_RAW
 # Pod members share the network namespace, so Valkey is on localhost.
 Environment=CPTV_VALKEY_HOST=127.0.0.1
 Environment=CPTV_VALKEY_PORT=6379
