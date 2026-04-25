@@ -117,14 +117,18 @@ http = data.http %} {% set quick_links = data.quick_links %}
     Resolver: <code>{{ dns.resolver_ip }}</code>
     {% if dns.is_known_public %}({{ dns.resolver_name }}){% endif %}
   </p>
-  {% else %}
+  {% endif %}
   <p>
-    <small
-      >Resolver detection requires a DNS-side probe (not configured in this
-      deployment).</small
+    Resolver seen by Google's <code>o-o.myaddr.l.google.com</code>:
+    <span id="resolver-detected" aria-live="polite"
+      ><small>not yet probed</small></span
     >
   </p>
-  {% endif %}
+  <noscript>
+    <p>
+      <small>Resolver detection probe requires JavaScript.</small>
+    </p>
+  </noscript>
   <p>
     DNSSEC validation:
     <span id="dnssec-status" aria-live="polite">⚪ checking…</span>

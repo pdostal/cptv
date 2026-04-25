@@ -158,6 +158,41 @@
     }, 8000);
   }
 
+  // ---------- resolver detection (client-side) ----------
+  // Google operates the magic name `o-o.myaddr.l.google.com` whose TXT
+  // record is the address of the recursive resolver that asked Google.
+  // Querying it via DoH at dns.google reveals which resolver sits in
+  // front of the visitor. This is the closest the web app can get to
+  // server-side resolver detection without operating its own DNS zone.
+  async function detectResolver() {
+    const out = qs("#resolver-detected");
+    if (!out) return;
+    out.innerHTML = "<small>checking…</small>";
+    try {
+      const resp = await fetch(
+        "https://dns.google/resolve?name=o-o.myaddr.l.google.com&type=TXT",
+        { cache: "no-store", headers: { Accept: "application/dns-json" } },
+      );
+      if (!resp.ok) {
+        out.innerHTML = `<small>resolver probe failed: HTTP ${resp.status}</small>`;
+        return;
+      }
+      const data = await resp.json();
+      const answers = (data.Answer || [])
+        .map((a) => (a.data || "").replace(/^"|"$/g, ""))
+        .filter(Boolean);
+      if (answers.length === 0) {
+        out.innerHTML = "<small>no TXT answer (resolver may block DoH probe)</small>";
+        return;
+      }
+      out.innerHTML = answers
+        .map((a) => `<code>${a}</code>`)
+        .join(", ");
+    } catch (err) {
+      out.innerHTML = `<small>resolver probe failed (${err.message || "error"})</small>`;
+    }
+  }
+
   // ---------- traceroute SSE ----------
   // The server emits HTML fragments per event. We attach a raw EventSource
   // and place each event's payload into the right node by element id, so
@@ -388,6 +423,7 @@
     trackHistory();
     wireHistoryClearButton();
     detectAnycastPop();
+    detectResolver();
     wireTracerouteStream();
   });
 })();
