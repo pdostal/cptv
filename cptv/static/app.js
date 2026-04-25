@@ -9,6 +9,53 @@
   const ImageCtor = window.Image;
 
   // ---------- clock skew ----------
+  const SKEW_THRESHOLD_SECONDS = 5;
+  const SKEW_DISMISS_KEY = "cptv:clock-skew-dismissed:v1";
+
+  function formatDuration(absSeconds) {
+    if (absSeconds < 60) return `${absSeconds}s`;
+    if (absSeconds < 3600) {
+      const m = Math.floor(absSeconds / 60);
+      const s = absSeconds % 60;
+      return s ? `${m}m ${s}s` : `${m}m`;
+    }
+    if (absSeconds < 86400) {
+      const h = Math.floor(absSeconds / 3600);
+      const m = Math.floor((absSeconds % 3600) / 60);
+      return m ? `${h}h ${m}m` : `${h}h`;
+    }
+    const d = Math.floor(absSeconds / 86400);
+    const h = Math.floor((absSeconds % 86400) / 3600);
+    return h ? `${d}d ${h}h` : `${d}d`;
+  }
+
+  function isSkewDismissed(diffSeconds) {
+    try {
+      const raw = window.localStorage.getItem(SKEW_DISMISS_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      // Suppress only if the dismissal was for a similar skew (within 60s).
+      return (
+        data &&
+        typeof data.diff === "number" &&
+        Math.abs(data.diff - diffSeconds) <= 60
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function dismissSkew(diffSeconds) {
+    try {
+      window.localStorage.setItem(
+        SKEW_DISMISS_KEY,
+        JSON.stringify({ diff: diffSeconds, at: new Date().toISOString() }),
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
   function checkClockSkew() {
     const el = qs("#server-time");
     if (!el) return;
@@ -17,12 +64,24 @@
     const server = Date.parse(serverTs);
     if (Number.isNaN(server)) return;
     const diffSeconds = Math.round((Date.now() - server) / 1000);
-    if (Math.abs(diffSeconds) > 5) {
-      const warn = qs("#clock-skew-warning");
-      if (!warn) return;
-      warn.hidden = false;
-      const span = qs("span", warn);
-      if (span) span.textContent = `${diffSeconds}s`;
+    if (Math.abs(diffSeconds) <= SKEW_THRESHOLD_SECONDS) return;
+    if (isSkewDismissed(diffSeconds)) return;
+
+    const warn = qs("#clock-skew-warning");
+    if (!warn) return;
+    warn.hidden = false;
+
+    const direction = diffSeconds > 0 ? "ahead of" : "behind";
+    const span = qs("#clock-skew-value");
+    if (span) {
+      span.textContent = `${formatDuration(Math.abs(diffSeconds))} ${direction}`;
+    }
+    const dismiss = qs("#clock-skew-dismiss");
+    if (dismiss) {
+      on(dismiss, "click", () => {
+        dismissSkew(diffSeconds);
+        warn.hidden = true;
+      });
     }
   }
 

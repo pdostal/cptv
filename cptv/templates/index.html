@@ -137,8 +137,21 @@ http = data.http %} {% set quick_links = data.quick_links %}
   </p>
   {% endif %}
   <p>HTTP version: <code>{{ http.version }}</code></p>
-  <p id="clock-skew-warning" hidden>
-    ⚠️ Your clock differs from the server by <span id="clock-skew-value">…</span>.
+  <p id="clock-skew-warning" hidden role="alert" aria-live="polite">
+    <mark>
+      ⚠️ Your clock is
+      <strong><span id="clock-skew-value">…</span></strong>
+      the server's. Schedules, certificate validation, and TOTP codes may
+      misbehave until you sync.
+    </mark>
+    <button
+      type="button"
+      id="clock-skew-dismiss"
+      class="secondary outline"
+      aria-label="Dismiss clock skew warning"
+    >
+      Dismiss
+    </button>
   </p>
 </article>
 
