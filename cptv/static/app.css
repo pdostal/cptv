@@ -15,6 +15,23 @@
   color: var(--pico-color-blue-500, #0050b8);
 }
 
+/* Per-stack ASN / GeoIP rows. When v4 and v6 differ the JS appends
+   two <ul>s into these containers; auto-fit grid puts them
+   side-by-side when the card is wide enough (~28 rem) and stacks
+   them on phone widths. When the JS appends a single merged <ul>
+   it just fills the row. */
+#geoip-stacks,
+#asn-stacks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0 1.5rem;
+  align-items: start;
+}
+#geoip-stacks > ul,
+#asn-stacks > ul {
+  margin: 0;
+}
+
 /* The request-headers dump in the request-inspection panel can have
    long header values; let them wrap so they don't blow out the card. */
 .cptv-headers-dump {
@@ -42,14 +59,17 @@
   margin-right: 0.3rem;
 }
 .cptv-nav-disclosure {
-  /* Reset Pico's <details> chrome so the controls look like a nav. */
+  /* Reset Pico's <details> chrome so the controls look like a nav.
+     On desktop (see @media below) we set display:contents so the
+     <details> element generates no box and its children render in
+     the flow as if it weren't there \u2014 sidestepping the browser's
+     'closed details hides children' behaviour that would otherwise
+     suppress the inline menu. */
   margin: 0;
   padding: 0;
   position: relative;
 }
-/* Desktop: hide the hamburger summary, show the menu inline as a row. */
 .cptv-nav-toggle {
-  display: none;
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -79,11 +99,20 @@
   padding: 0;
 }
 
-/* Phone + tablet: hamburger appears, menu becomes a dropdown panel. */
-@media (max-width: 720px) {
-  .cptv-nav-toggle {
-    display: inline-block;
+/* Desktop: lift the <details> wrapper out of the layout entirely
+   (display: contents) so .cptv-nav-menu renders inline as part of the
+   header flex row. The hamburger summary is hidden in this mode. */
+@media (min-width: 721px) {
+  .cptv-nav-disclosure {
+    display: contents;
   }
+  .cptv-nav-toggle {
+    display: none;
+  }
+}
+
+/* Phone + tablet: hamburger summary visible, menu drops down on click. */
+@media (max-width: 720px) {
   /* Hide the menu unless the user clicks the hamburger (=details[open]). */
   .cptv-nav-disclosure:not([open]) .cptv-nav-menu {
     display: none;
@@ -117,30 +146,41 @@
    by default; that looks out of place inside the diagnostic cards.
    Restyle them as plain blue underlined links so they read as inline
    actions. The :not() guard excludes the navigation hamburger summary,
-   which has its own button-like styling. */
-summary:not(.cptv-nav-toggle),
+   which has its own button-like styling.
+
+   Specificity matters here: Pico ships
+   `details summary:not([role])` at (0,2,1) which sets summary color to
+   the body text colour. We match that specificity with
+   `details summary:not(.cptv-nav-toggle)` so app.css (loaded after
+   pico.min.css) wins on cascade order. */
+details summary:not(.cptv-nav-toggle),
 #request-geolocation,
 #history-clear {
   color: var(--pico-primary, #0a4f9c);
   text-decoration: underline;
+  text-decoration-color: var(--pico-primary, #0a4f9c);
   text-underline-offset: 0.15em;
   cursor: pointer;
   background: transparent;
   border: 0;
   padding: 0;
   font: inherit;
-  display: inline;
 }
-summary:not(.cptv-nav-toggle):hover,
+details summary:not(.cptv-nav-toggle):hover,
 #request-geolocation:hover,
 #history-clear:hover {
   text-decoration-thickness: 2px;
 }
-summary:not(.cptv-nav-toggle) {
+details summary:not(.cptv-nav-toggle) {
   /* Drop the default disclosure marker; the underlined text is enough. */
   list-style: none;
 }
-summary:not(.cptv-nav-toggle)::-webkit-details-marker {
+details summary:not(.cptv-nav-toggle)::-webkit-details-marker {
+  display: none;
+}
+/* Pico's `details summary::after` adds a chevron via background-image.
+   On these inline link-summaries it just adds noise; hide it. */
+details summary:not(.cptv-nav-toggle)::after {
   display: none;
 }
 

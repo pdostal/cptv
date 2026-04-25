@@ -35,10 +35,16 @@ http = data.http %} {% set quick_links = data.quick_links %}
   {% if ip.current %}
   <p>
     <code class="ip-current">{{ ip.current }}</code>
+    {# Drop the (IPv4)/(IPv6) protocol annotation \u2014 the address shape
+       already says it. Keep the parens only when at least one warning
+       (private RFC1918, CGNAT) needs surfacing. #}
+    {% if ip.is_private or ip.is_cgnat %}
     <small
-      >({{ ip.protocol }}{% if ip.is_private %}, private{% endif %}{% if
-      ip.is_cgnat %}, CGNAT ⚠️{% endif %})</small
+      >({% if ip.is_private %}private{% endif
+      %}{% if ip.is_private and ip.is_cgnat %}, {% endif
+      %}{% if ip.is_cgnat %}CGNAT ⚠️{% endif %})</small
     >
+    {% endif %}
   </p>
   {% else %}
   <p><code>unknown</code></p>
@@ -176,6 +182,20 @@ http = data.http %} {% set quick_links = data.quick_links %}
     DNSSEC validation:
     <span id="dnssec-status" aria-live="polite">⚪ checking…</span>
   </p>
+  <p>
+    <small>
+      Tested by loading an image from
+      <a
+        href="https://rhybar.cz/"
+        target="_blank"
+        rel="noopener noreferrer"
+        ><code>rhybar.cz</code></a
+      >
+      — a domain CZ.NIC publishes with a deliberately bogus DNSSEC
+      signature. If your resolver validates DNSSEC the load fails
+      and the test reports OK.
+    </small>
+  </p>
   <noscript
     ><small>DNSSEC validation check requires JavaScript.</small></noscript
   >
@@ -183,23 +203,20 @@ http = data.http %} {% set quick_links = data.quick_links %}
 
 <article id="timing-section">
   <header><strong>⏱️ Timing</strong></header>
-  <p>
-    Server time:
-    <time
-      id="server-time"
-      datetime="{{ timing.server_timestamp }}"
-      data-server-ts="{{ timing.server_timestamp }}"
-    >
-      {{ timing.server_timestamp }}
-    </time>
-  </p>
+  {# Hidden but kept in the DOM \u2014 read by checkClockSkew() in app.js
+     to compute the offset between the visitor's clock and ours. #}
+  <time
+    id="server-time"
+    datetime="{{ timing.server_timestamp }}"
+    data-server-ts="{{ timing.server_timestamp }}"
+    hidden
+  ></time>
   {% if timing.rtt_ms is not none %}
   <p>
     Server handling time: <code>{{ timing.rtt_ms }}ms</code>
     <small>(time spent on the server, excludes network)</small>
   </p>
   {% endif %}
-  <p>HTTP version: <code>{{ http.version }}</code></p>
   <p id="clock-skew-warning" hidden role="alert" aria-live="polite">
     <mark>
       ⚠️ Your clock is
