@@ -353,13 +353,15 @@ Full aggregated info — all fields combined.
 🔌 ASN:       AS1234  Example ISP
     Prefix:    203.0.113.0/24
 
-🔎 Resolver:  1.1.1.1  (Cloudflare)
-🔐 DNSSEC:    unable to determine (requires browser)
-
-⏱️  RTT:       12ms
+⏱️  RTT:       12ms (server-side handling)
     HTTP:      HTTP/2
     Server:    cptv.cz  (https://github.com/pdostal/cptv)
 ```
+
+Resolver classification, DNSSEC validation, and the server timestamp are
+deliberately absent from the curl-friendly text output: the first two
+require a browser to determine, and the timestamp is more useful coming
+from the host's own clock.
 
 **JSON response:**
 
