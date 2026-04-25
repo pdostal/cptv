@@ -88,6 +88,23 @@ def test_help_text_has_endpoints(client: TestClient):
     assert "ENDPOINTS" in r.text
     assert "/ipv4" in r.text
     assert "/traceroute" in r.text
+    # Must surface the streaming + suffix-format variants per item-7 review.
+    assert "/traceroute.json" in r.text
+    assert "/traceroute.txt" in r.text
+    assert "/traceroute/stream" in r.text
+    # ?format=json should be advertised so plain-text users discover it.
+    assert "?format=json" in r.text
+    # The dropped /details endpoint must NOT appear anymore.
+    assert "/details" not in r.text
+
+
+def test_help_html_lists_traceroute_streaming(client: TestClient):
+    r = client.get("/help", headers={"Accept": "text/html"})
+    assert r.status_code == 200
+    assert "/traceroute/stream" in r.text
+    assert "/traceroute.json" in r.text
+    assert "?format=json" in r.text
+    assert "/details" not in r.text
 
 
 def test_traceroute_html(client: TestClient):
@@ -112,18 +129,21 @@ def test_help_html(client: TestClient):
     assert r.headers["content-type"].startswith("text/html")
 
 
-# ---------- /details + enriched aggregated ----------
+# ---------- aggregated home page (was the /details split, now folded in) ----------
 
 
 def test_aggregated_json_has_all_sections(client: TestClient):
     r = client.get("/", headers={**V4, "Accept": "application/json"})
     assert r.status_code == 200
     body = r.json()
-    for key in ("ip", "geoip", "asn", "dns", "timing", "http", "meta", "quick_links"):
+    for key in ("ip", "geoip", "asn", "dns", "timing", "http", "meta", "quick_links", "request"):
         assert key in body
     assert body["timing"]["server_timestamp"].endswith("Z")
     assert body["http"]["version"].startswith("HTTP/")
     assert body["meta"]["repo"] == "https://github.com/pdostal/cptv"
+    # Request inspection panel data is part of the aggregated payload now.
+    assert body["request"]["method"] == "GET"
+    assert isinstance(body["request"]["headers"], dict)
 
 
 def test_aggregated_html_renders_sections(client: TestClient):
@@ -138,6 +158,7 @@ def test_aggregated_html_renders_sections(client: TestClient):
     assert 'id="history-section"' in body
     assert 'id="traceroute-section"' in body
     assert 'id="anycast-section"' in body
+    assert 'id="request-section"' in body  # request inspection (was /details)
     assert 'id="ip-history"' in body
     assert 'id="anycast-results"' in body
     assert "/static/vendor/pico.min.css" in body
@@ -150,24 +171,31 @@ def test_aggregated_html_renders_sections(client: TestClient):
     assert "data:image/svg+xml" in body
 
 
-def test_details_html_adds_request_section(client: TestClient):
-    r = client.get("/details", headers={**V4, "Accept": "text/html"})
+def test_details_endpoints_are_gone(client: TestClient):
+    """/details, /more, /api/v1/details were folded into /."""
+    for path in ("/details", "/more", "/api/v1/details"):
+        r = client.get(path, headers={**V4, "Accept": "text/html"})
+        assert r.status_code == 404, path
+
+
+def test_text_hint_appended_on_aggregated(client: TestClient):
+    """Plain-text aggregated output ends with a hint pointing at JSON."""
+    r = client.get("/", headers=_headers(V4, CURL))
     assert r.status_code == 200
-    assert "request-section" in r.text
+    assert "tip: append ?format=json" in r.text
 
 
-def test_details_json_has_request(client: TestClient):
-    r = client.get("/api/v1/details", headers={**V4, "Accept": "application/json"})
-    assert r.status_code == 200
-    body = r.json()
-    assert "request" in body
-    assert body["request"]["method"] == "GET"
+def test_text_hint_omitted_on_bare_ip_endpoints(client: TestClient):
+    """Bare-IP echoes stay clean for shell scripting."""
+    for path in ("/ip", "/ipv4", "/ip4", "/4", "/isp"):
+        r = client.get(path, headers=_headers(V4, CURL))
+        assert "tip:" not in r.text, path
 
 
-def test_more_alias(client: TestClient):
-    r = client.get("/more", headers=_headers(V4, CURL))
-    assert r.status_code == 200
-    assert "Server:" in r.text
+def test_curl_howto_card_on_home(client: TestClient):
+    r = client.get("/", headers={**V4, "Accept": "text/html"})
+    assert 'id="curl-howto-section"' in r.text
+    assert "curl ipv4." in r.text
 
 
 def test_aggregated_json_has_redirect_origin(client: TestClient):

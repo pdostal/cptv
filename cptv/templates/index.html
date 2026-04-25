@@ -231,27 +231,53 @@ http = data.http %} {% set quick_links = data.quick_links %}
 
 <article id="traceroute-section">
   <header><strong>🛰️ Traceroute</strong></header>
-  <div id="traceroute-card" data-stream-url="/traceroute/stream">
-    <div id="traceroute-status">
-      <p><small>Connecting…</small></p>
+  <div id="traceroute-card">
+    {# Tabs for IPv4 / IPv6. The wireTraceroute() handler in app.js
+       hides whichever stack the dual-stack probe didn't see. #}
+    <fieldset
+      role="radiogroup"
+      aria-label="Choose traceroute stack"
+      class="cptv-trace-tabs"
+    >
+      <label hidden id="trace-tab-ipv4-label">
+        <input type="radio" name="trace-stack" value="ipv4" />
+        <span>IPv4</span>
+      </label>
+      <label hidden id="trace-tab-ipv6-label">
+        <input type="radio" name="trace-stack" value="ipv6" />
+        <span>IPv6</span>
+      </label>
+    </fieldset>
+
+    {% for stack in ["ipv4", "ipv6"] %}
+    <div
+      class="cptv-trace-pane"
+      data-trace-stack="{{ stack }}"
+      hidden
+    >
+      <div class="cptv-trace-status">
+        <p><small>Waiting…</small></p>
+      </div>
+      <figure>
+        <table role="grid">
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">IP</th>
+              <th scope="col">Hostname</th>
+              <th scope="col">ASN</th>
+              <th scope="col">Loss</th>
+              <th scope="col">Avg</th>
+              <th scope="col">Best</th>
+              <th scope="col">Worst</th>
+            </tr>
+          </thead>
+          <tbody class="cptv-trace-hops"></tbody>
+        </table>
+      </figure>
     </div>
-    <figure>
-      <table role="grid">
-        <thead>
-          <tr>
-            <th scope="col">#</th>
-            <th scope="col">IP</th>
-            <th scope="col">Hostname</th>
-            <th scope="col">ASN</th>
-            <th scope="col">Loss</th>
-            <th scope="col">Avg</th>
-            <th scope="col">Best</th>
-            <th scope="col">Worst</th>
-          </tr>
-        </thead>
-        <tbody id="traceroute-hops"></tbody>
-      </table>
-    </figure>
+    {% endfor %}
+
     <noscript>
       <p>
         JavaScript-disabled visitors:
@@ -259,6 +285,84 @@ http = data.http %} {% set quick_links = data.quick_links %}
       </p>
     </noscript>
   </div>
+</article>
+
+{# Request inspection panel — collapsed by default. Replaces the old
+   /details page; shows everything the server sees about this request
+   plus a curated list of headers cptv sends back. #}
+<article id="request-section">
+  <header><strong>📋 Request inspection</strong></header>
+  {% set req = data.request %}
+  <details>
+    <summary>Headers seen by the server</summary>
+    <ul>
+      <li>Method: <code>{{ req.method }}</code></li>
+      <li>Path: <code>{{ req.path }}</code></li>
+      <li>Scheme: <code>{{ req.scheme }}</code></li>
+      <li>Direct client (pre-proxy): <code>{{ req.client or "—" }}</code></li>
+      <li>Forwarded proto: <code>{{ data.http.protocol }}</code></li>
+      {% if data.http.referrer %}
+      <li>Referrer: <code>{{ data.http.referrer }}</code></li>
+      {% endif %}
+    </ul>
+    <pre style="white-space: pre-wrap; overflow-wrap: anywhere"
+      >{% for k, v in req.headers.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre
+    >
+  </details>
+  <details>
+    <summary>Response headers cptv sends back</summary>
+    <ul>
+      <li>
+        <code>X-Response-Time-Ms</code> — server-side handling time
+      </li>
+      <li>
+        <code>Access-Control-Allow-Origin: *</code> — set on
+        <code>/ip</code>, <code>/ipv4</code>, <code>/ipv6</code> and
+        their aliases so the browser dual-stack probe can read them
+      </li>
+      <li>
+        <code>X-Traceroute-Cached</code> /
+        <code>X-Traceroute-Cache-Age</code> /
+        <code>X-Traceroute-Refreshes-In</code> — set on every
+        <code>/traceroute*</code> response
+      </li>
+      <li>
+        <code>Cache-Control: no-store</code> — set on the IP echo
+        endpoints so dual-stack results are always fresh
+      </li>
+    </ul>
+    <p>
+      <small
+        >Inspect them yourself with
+        <code>curl -I {{ data.meta.server }}/ip</code>.</small
+      >
+    </p>
+  </details>
+</article>
+
+<article id="curl-howto-section">
+  <header><strong>💻 Use cptv from your terminal</strong></header>
+  <details>
+    <summary>Show curl examples</summary>
+    {% set d = data.meta.server %}
+    <pre style="white-space: pre-wrap"><code>curl {{ d }}                        # plain text aggregated
+curl {{ d }}/?format=json           # JSON for scripting
+curl ipv4.{{ d }}                   # bare IPv4, no decoration
+curl ipv6.{{ d }}                   # bare IPv6, no decoration
+MY_IP=$(curl -s ipv4.{{ d }})       # capture into a shell var
+curl {{ d }}/traceroute.txt         # blocking traceroute
+curl {{ d }}/asn?format=json        # one section as JSON
+curl -I {{ d }}/ip                  # see response headers
+</code></pre>
+    <p>
+      <small
+        >Plain-text endpoints add a one-line <code>?format=json</code>
+        hint at the end; the bare-IP endpoints don't, so they remain
+        clean for scripting.</small
+      >
+    </p>
+  </details>
 </article>
 
 {% if quick_links %}

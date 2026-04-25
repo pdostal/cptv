@@ -68,6 +68,43 @@ class TracerouteBusyError(Exception):
     """Raised when the global concurrency cap is saturated and the wait timed out."""
 
 
+class TracerouteUnreachableError(TracerouteError):
+    """Raised when the host has no route to the target IP family."""
+
+
+def _family_flag(target: IPAddress) -> str:
+    """Return ``-4`` or ``-6`` so mtr commits to one family.
+
+    Without this, mtr-packet does an internal UDP ``connect()`` to discover
+    the source address, which fails with ``Network is unreachable`` (and a
+    very confusing error message) when the kernel has no route to the
+    target's family. Forcing ``-4`` / ``-6`` lets mtr fail cleanly and lets
+    us recognise the failure shape in :func:`_translate_mtr_error`.
+    """
+    return "-6" if isinstance(target, ipaddress.IPv6Address) else "-4"
+
+
+def _translate_mtr_error(stderr: str, target: IPAddress) -> Exception:
+    """Convert an mtr stderr blob into the most informative exception.
+
+    Specifically, ``Network is unreachable`` from the kernel via mtr-packet
+    means there is no route to ``target``'s family from this host. Surface
+    that as :class:`TracerouteUnreachableError` so callers (and the SSE
+    stream) can render a friendly fixed-shape message instead of leaking
+    mtr internals or stack traces.
+
+    The fallback path logs mtr's raw stderr at ``warning`` level (operators
+    get the detail) but raises a generic :class:`TracerouteError` whose
+    message is a fixed string (clients get no implementation detail).
+    """
+    lower = stderr.lower()
+    family = "IPv6" if isinstance(target, ipaddress.IPv6Address) else "IPv4"
+    if "network is unreachable" in lower or "no route to host" in lower:
+        return TracerouteUnreachableError(f"no {family} route from this host")
+    log.warning("mtr stderr (%s): %s", target, stderr.strip())
+    return TracerouteError("traceroute failed")
+
+
 # Lazily-initialised process-wide semaphore. Created on first use so the
 # cap value can be read from settings (which may be overridden in tests).
 _global_semaphore: asyncio.Semaphore | None = None
@@ -186,12 +223,18 @@ async def run_mtr(target: IPAddress) -> TracerouteResult:
         raise TracerouteBusyError(msg) from exc
 
     try:
+        # mtr defaults to ICMP echo (no flag exposes that; the absence of
+        # -u / -T is the way). The explicit -4 / -6 flag stops mtr-packet
+        # from probing the wrong family during source-address discovery,
+        # which is the failure mode behind "udp socket connect failed:
+        # Network is unreachable" on hosts missing a route for one stack.
         cmd = [
             settings.mtr_path,
             "--json",
             "--report",
             "--no-dns",
             "--mpls",
+            _family_flag(target),
             "-c",
             str(settings.mtr_count),
             target_str,
@@ -218,8 +261,7 @@ async def run_mtr(target: IPAddress) -> TracerouteResult:
 
         if proc.returncode != 0:
             err = stderr.decode(errors="replace").strip()
-            msg = f"mtr exited {proc.returncode}: {err}"
-            raise TracerouteError(msg)
+            raise _translate_mtr_error(err, target)
 
         try:
             data = json.loads(stdout)
@@ -357,6 +399,7 @@ async def _stream_mtr_raw_lines(target: IPAddress) -> AsyncIterator[bytes]:
         "--raw",
         "--no-dns",
         "--mpls",
+        _family_flag(target),
         "-c",
         str(settings.mtr_count),
         target_str,
@@ -402,8 +445,7 @@ async def _stream_mtr_raw_lines(target: IPAddress) -> AsyncIterator[bytes]:
             err = b""
             if proc.stderr is not None:
                 err = await proc.stderr.read()
-            msg = f"mtr exited {proc.returncode}: {err.decode(errors='replace').strip()}"
-            raise TracerouteError(msg)
+            raise _translate_mtr_error(err.decode(errors="replace"), target)
     finally:
         if proc is not None and proc.returncode is None:
             try:

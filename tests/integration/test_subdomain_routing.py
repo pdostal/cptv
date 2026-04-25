@@ -121,3 +121,29 @@ def test_apex_does_not_show_brand_prefix(client: TestClient):
     )
     body = r.text
     assert "cptv-brand-prefix" not in body
+
+
+def test_apex_offers_link_to_secure(client: TestClient):
+    r = client.get(
+        "/",
+        headers={
+            **FWD_V4,
+            **BASE_DOMAIN,
+            "Host": "example.test",
+            "Accept": "text/html",
+        },
+    )
+    assert 'href="https://secure.example.test/"' in r.text
+
+
+def test_secure_offers_link_to_apex(client: TestClient):
+    r = client.get(
+        "/",
+        headers={
+            **FWD_V4,
+            **BASE_DOMAIN,
+            "Host": "secure.example.test",
+            "Accept": "text/html",
+        },
+    )
+    assert 'href="http://example.test/"' in r.text

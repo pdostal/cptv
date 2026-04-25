@@ -129,14 +129,19 @@ Detected **client-side** via JS `<img>` tag — because the question is whether 
 
 The browser simultaneously loads:
 
-1. A pixel from **`http://www.rhybar.cz/`** — intentionally signed with an **invalid DNSSEC signature**, operated by **CZ.NIC** (Czech internet registry) specifically as a test domain
+1. A pixel from **`https://rhybar.cz/`** — intentionally signed with an **invalid DNSSEC signature**, operated by **CZ.NIC** (Czech internet registry) specifically as a test domain
 2. A pixel from a known validly-signed domain — as a connectivity control
 
-Outcomes:
+Each probe has three terminal states: `loaded`, `errored`, or `timeout`
+(5 s cap). Outcomes:
 
-- Control loads + `rhybar.cz` fails → 🟢 **validating**
-- Both load → 🔴 **not validating**
-- Control fails → ⚪ **inconclusive**
+- Control loaded + bogus errored → 🟢 **validating**
+- Control loaded + bogus loaded → 🔴 **not validating**
+- Control errored → ⚪ **inconclusive (control unreachable)**
+- Either probe timed out → ⚪ **inconclusive (probe timed out)**.
+  A timeout is _not_ treated as success: a slow network must not let
+  us claim "validating" when the resolver might in fact have returned
+  the bogus record.
 - JS disabled → ⚪ _"Unable to determine — JavaScript required"_
 
 References:
@@ -379,7 +384,7 @@ Full aggregated info — all fields combined.
     "number": 1234,
     "name": "Example ISP",
     "prefix": "203.0.113.0/24",
-    "looking_glass": "https://lg.he.net/cgi-bin/bgplookingglass?asn=1234"
+    "looking_glass": "https://bgp.he.net/AS1234"
   },
   "dns": {
     "resolver_ip": "1.1.1.1",
@@ -488,7 +493,7 @@ IPv6 address only. Also served by the `ipv6.<domain>` subdomain.
 🔌 ASN:       AS1234
     Name:      Example ISP
     Prefix:    203.0.113.0/24
-    Looking glass: https://lg.he.net/...
+    Looking glass: https://bgp.he.net/AS1234
 ```
 
 **JSON:**
@@ -498,7 +503,7 @@ IPv6 address only. Also served by the `ipv6.<domain>` subdomain.
   "asn": 1234,
   "name": "Example ISP",
   "prefix": "203.0.113.0/24",
-  "looking_glass": "https://lg.he.net/cgi-bin/bgplookingglass?asn=1234"
+  "looking_glass": "https://bgp.he.net/AS1234"
 }
 ```
 
@@ -613,9 +618,13 @@ Always returns plain text regardless of `Accept` header.
 
 ---
 
-### 5.12 `GET /details` · `GET /more` · `GET /api/v1/details`
+### 5.12 ~~`GET /details`~~ — removed
 
-Extended verbose output — all fields plus additional technical detail. Plain text by default when curled, full HTML page in browser.
+The dedicated `/details`, `/more`, and `/api/v1/details` endpoints were
+removed in v0.1.4. Their content (a "request inspection" panel showing
+the headers the server sees and the response headers cptv emits) is now
+collapsed-by-default on the home page itself, both in the HTML view and
+under the `request` key in the aggregated JSON response.
 
 ---
 

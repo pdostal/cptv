@@ -1,50 +1,143 @@
-{% extends "base.html" %} {% block title %}cptv — help{% endblock title %} {% block
-content %}
+{% extends "base.html" %}
+{% block title %}cptv — help{% endblock title %}
+{% block content %}
 <article>
   <header><strong>Usage guide</strong></header>
+
   <h2>Endpoints</h2>
-  <ul>
-    <li><code>/</code> — Full aggregated info (auto-detects format)</li>
-    <li><code>/ip</code> — Your current IP address</li>
-    <li><code>/ipv4</code> <code>/ip4</code> <code>/4</code> — IPv4 only</li>
-    <li><code>/ipv6</code> <code>/ip6</code> <code>/6</code> — IPv6 only</li>
-    <li><code>/geoip</code> — Geolocation</li>
-    <li><code>/asn</code> <code>/isp</code> — Network operator info</li>
-    <li><code>/dns</code> — DNS resolver classifier</li>
-    <li><code>/traceroute</code> — Traceroute to your IP (cached 1h)</li>
-    <li><code>/details</code> <code>/more</code> — Extended output</li>
-    <li><code>/help</code> — This page</li>
-    <li><code>/health</code> — Service health (JSON)</li>
-  </ul>
+  <table role="grid">
+    <thead>
+      <tr>
+        <th scope="col">Path</th>
+        <th scope="col">Returns</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>/</code></td>
+        <td>Full aggregated info — auto-detects HTML / JSON / text</td>
+      </tr>
+      <tr>
+        <td><code>/ip</code></td>
+        <td>Current connection IP — bare value</td>
+      </tr>
+      <tr>
+        <td><code>/ipv4</code> <code>/ip4</code> <code>/4</code></td>
+        <td>IPv4 only — bare value, scriptable</td>
+      </tr>
+      <tr>
+        <td><code>/ipv6</code> <code>/ip6</code> <code>/6</code></td>
+        <td>IPv6 only — bare value, scriptable</td>
+      </tr>
+      <tr>
+        <td><code>/geoip</code></td>
+        <td>Country + city + coordinates</td>
+      </tr>
+      <tr>
+        <td><code>/asn</code></td>
+        <td>ASN, operator, prefix, looking-glass URL</td>
+      </tr>
+      <tr>
+        <td><code>/isp</code></td>
+        <td>"<code>name (AS&lt;n&gt;)</code>" — bare value, scriptable</td>
+      </tr>
+      <tr>
+        <td><code>/dns</code></td>
+        <td>DNS resolver classifier (<code>?resolver=…</code> optional)</td>
+      </tr>
+      <tr>
+        <td><code>/traceroute</code></td>
+        <td>Full traceroute, blocking</td>
+      </tr>
+      <tr>
+        <td><code>/traceroute.json</code></td>
+        <td>Same, JSON only</td>
+      </tr>
+      <tr>
+        <td><code>/traceroute.txt</code></td>
+        <td>Same, plain text only</td>
+      </tr>
+      <tr>
+        <td><code>/traceroute/stream</code></td>
+        <td>Server-Sent Events of hops as they arrive</td>
+      </tr>
+      <tr>
+        <td><code>/help</code></td>
+        <td>This page</td>
+      </tr>
+      <tr>
+        <td><code>/health</code></td>
+        <td>Service health (always JSON)</td>
+      </tr>
+      <tr>
+        <td><code>/docs</code> <code>/redoc</code></td>
+        <td>Auto-generated OpenAPI explorers</td>
+      </tr>
+      <tr>
+        <td><code>/openapi.json</code></td>
+        <td>Raw OpenAPI schema</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    <small
+      >Every path is also reachable under <code>/api/v1/…</code> for
+      stable client integration.</small
+    >
+  </p>
 
   <h2>Subdomains</h2>
   <ul>
     <li>
-      <code>ipv4.{{ domain }}</code> — Force IPv4 (<code
-        >curl ipv4.{{ domain }}</code
-      >)
+      <code>{{ domain }}</code> — apex, HTTP only (captive-portal-friendly)
     </li>
-    <li><code>ipv6.{{ domain }}</code> — Force IPv6</li>
-    <li><code>secure.{{ domain }}</code> — HTTPS-only variant</li>
-  </ul>
-
-  <h2>Content negotiation</h2>
-  <p>Every endpoint supports three response formats:</p>
-  <ul>
-    <li>Browser default → HTML</li>
+    <li><code>www.{{ domain }}</code> — same as apex</li>
     <li>
-      <code>Accept: application/json</code> or <code>?format=json</code> → JSON
+      <code>ipv4.{{ domain }}</code> — DNS A only, forces IPv4 (HTTP + HTTPS)
     </li>
-    <li>curl user-agent or <code>?format=text</code> → plain text</li>
+    <li>
+      <code>ipv6.{{ domain }}</code> — DNS AAAA only, forces IPv6 (HTTP + HTTPS)
+    </li>
+    <li>
+      <code>secure.{{ domain }}</code> — TLS-enforced mirror of the apex
+      (HTTPS only)
+    </li>
+  </ul>
+  <p>
+    <small
+      >The
+      <strong>🔒&nbsp;secure</strong> /
+      <strong>🔓&nbsp;apex</strong>
+      link in the navigation bar always points at the alternate flavour
+      so you can switch with one click.</small
+    >
+  </p>
+
+  <h2>Format negotiation</h2>
+  <p>Every endpoint speaks three formats. Pick one:</p>
+  <ul>
+    <li>
+      <code>?format=text</code> /
+      <code>?format=json</code> /
+      <code>?format=html</code> — explicit override
+    </li>
+    <li><code>Accept: application/json</code> header — JSON</li>
+    <li><code>Accept: text/html</code> header — HTML</li>
+    <li>
+      <code>User-Agent: curl/*</code> — plain text (auto-detected)
+    </li>
   </ul>
 
   <h2>Examples</h2>
-  <pre>
-curl {{ domain }}
-curl ipv4.{{ domain }}
-curl {{ domain }}/geoip
-curl {{ domain }}/asn?format=json
-MY_IP=$(curl -s ipv4.{{ domain }})</pre
-  >
+  <pre style="white-space: pre-wrap"><code>curl {{ domain }}                       # aggregated text
+curl {{ domain }}/?format=json          # aggregated JSON
+curl ipv4.{{ domain }}                  # bare IPv4
+curl ipv6.{{ domain }}                  # bare IPv6
+MY_IP=$(curl -s ipv4.{{ domain }})      # capture in shell
+curl {{ domain }}/geoip                 # one section, plain text
+curl {{ domain }}/asn?format=json       # one section, JSON
+curl {{ domain }}/traceroute.txt        # blocking traceroute
+curl -I {{ domain }}/ip                 # see response headers
+</code></pre>
 </article>
 {% endblock content %}

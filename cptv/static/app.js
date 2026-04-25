@@ -133,51 +133,68 @@
   }
 
   // ---------- DNSSEC probe ----------
-  // Loads an image from www.rhybar.cz (intentionally signed with an invalid
-  // DNSSEC signature by CZ.NIC) and from a control host. If only the control
-  // loads, the resolver validates DNSSEC.
+  // Loads an image from rhybar.cz (intentionally signed with an invalid
+  // DNSSEC signature by CZ.NIC) and from a control host. If only the
+  // control loads, the resolver validates DNSSEC.
+  //
+  // Each probe has three terminal states:
+  //   * 'loaded' — confirmed reachable
+  //   * 'errored' — confirmed unreachable
+  //   * 'timeout' — no answer within DNSSEC_TIMEOUT_MS, treat as inconclusive
+  // Crucially, a bogus-probe TIMEOUT is NOT the same as an explicit error:
+  // a slow network shouldn't make us claim 'validating' when the resolver
+  // might in fact return the bogus record.
   function checkDnssec() {
     const badge = qs("#dnssec-status");
     if (!badge) return;
 
-    const results = { control: null, bogus: null };
-    const settle = () => {
-      if (results.control === null || results.bogus === null) return;
-      if (results.control === false) {
+    const DNSSEC_TIMEOUT_MS = 5000;
+    const results = { control: null, bogus: null }; // 'loaded' | 'errored' | 'timeout'
+
+    const render = () => {
+      // Conclusion table:
+      //   control loaded  & bogus loaded   → 🔴 not validating
+      //   control loaded  & bogus errored  → 🟢 validating
+      //   control errored                 → ⚪ inconclusive (control unreachable)
+      //   any timeout                     → ⚪ inconclusive (timeout)
+      if (results.control === null || results.bogus === null) {
+        // Still in progress: leave the initial '⚪ checking…' label alone.
+        return;
+      }
+      if (results.control === "timeout" || results.bogus === "timeout") {
+        badge.textContent =
+          "⚪ inconclusive (probe timed out — your network may be slow)";
+        return;
+      }
+      if (results.control === "errored") {
         badge.textContent = "⚪ inconclusive (control unreachable)";
-      } else if (results.bogus === true) {
-        badge.textContent = "🔴 not validating";
+        return;
+      }
+      if (results.bogus === "loaded") {
+        badge.textContent = "🔴 not validating (resolver returned bogus record)";
       } else {
-        badge.textContent = "🟢 validating";
+        badge.textContent = "🟢 validating (bogus record was rejected)";
       }
     };
+
     const probe = (url, key) => {
       const img = new ImageCtor();
-      img.onload = () => {
-        results[key] = true;
-        settle();
+      let settled = false;
+      const finish = (state) => {
+        if (settled) return;
+        settled = true;
+        results[key] = state;
+        render();
       };
-      img.onerror = () => {
-        results[key] = false;
-        settle();
-      };
+      img.onload = () => finish("loaded");
+      img.onerror = () => finish("errored");
       img.src = url;
+      window.setTimeout(() => finish("timeout"), DNSSEC_TIMEOUT_MS);
     };
-    // Control: a validly-signed site. Bogus: rhybar.cz (CZ.NIC DNSSEC test).
-    // Both URLs are HTTPS so secure.<domain> doesn't trigger Mixed-Content
-    // upgrade notices. The DNSSEC test depends on whether the visitor's
-    // resolver returns the bogus A record at all, not on the TLS handshake,
-    // so the choice of scheme is harmless. www.rhybar.cz serves HTTPS with
-    // a valid certificate (HSTS + HTTP/2).
-    probe(`https://www.iana.org/favicon.ico?t=${Date.now()}`, "control");
-    probe(`https://www.rhybar.cz/favicon.ico?t=${Date.now()}`, "bogus");
 
-    // Don't hang forever.
-    setTimeout(() => {
-      if (results.control === null) results.control = false;
-      if (results.bogus === null) results.bogus = false;
-      settle();
-    }, 8000);
+    probe(`https://www.iana.org/favicon.ico?t=${Date.now()}`, "control");
+    // Apex rhybar.cz, not www. — both share the bogus DNSSEC signature.
+    probe(`https://rhybar.cz/favicon.ico?t=${Date.now()}`, "bogus");
   }
 
   // ---------- resolver detection (client-side) ----------
@@ -264,20 +281,17 @@
   applyTheme(readTheme());
 
   // ---------- traceroute SSE ----------
-  // The server emits HTML fragments per event. We attach a raw EventSource
-  // and place each event's payload into the right node by element id, so
-  // hop rows can be replaced in place as their measurements update.
-  function wireTracerouteStream() {
-    const card = qs("#traceroute-card");
-    if (!card) return;
-    const url = card.dataset.streamUrl;
-    if (!url || typeof window.EventSource !== "function") return;
-
-    const status = qs("#traceroute-status", card);
-    const tbody = qs("#traceroute-hops", card);
-    if (!status || !tbody) return;
-
-    const source = new window.EventSource(url);
+  // Two stream-capable panes (one per stack). The server-side endpoint
+  // is the same; we hit ipv4.<base> / ipv6.<base> so the request lands
+  // on the server with the matching family, and mtr traces it.
+  // Stacks the dual-stack probe didn't actually see are hidden so the
+  // user never sees a tab that can't possibly succeed.
+  function wireTraceroutePane(pane, streamUrl) {
+    const status = qs(".cptv-trace-status", pane);
+    const tbody = qs(".cptv-trace-hops", pane);
+    if (!status || !tbody || typeof window.EventSource !== "function") {
+      return null;
+    }
 
     const setStatus = (html) => {
       status.innerHTML = html;
@@ -297,9 +311,7 @@
       else tbody.appendChild(row);
       // Briefly flash the row to draw the eye to fresh measurements.
       // Use double rAF to schedule the class add after the next paint
-      // so we don't force layout (Firefox warns "Layout was forced
-      // before the page was fully loaded" if we read offsetWidth here
-      // mid-load) and the keyframe restarts cleanly.
+      // so we don't force layout (Firefox warns about that mid-load).
       row.classList.remove("cptv-hop-flash");
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
@@ -309,8 +321,9 @@
       });
     };
 
-    card.classList.add("is-running");
-    const stopPulse = () => card.classList.remove("is-running");
+    pane.classList.add("is-running");
+    const stopPulse = () => pane.classList.remove("is-running");
+    const source = new window.EventSource(streamUrl);
 
     source.addEventListener("status", (ev) => setStatus(ev.data));
     source.addEventListener("hop", (ev) => swapHop(ev.data));
@@ -327,6 +340,92 @@
         stopPulse();
       }
     });
+    return source;
+  }
+
+  function wireTracerouteTabs() {
+    const card = qs("#traceroute-card");
+    if (!card) return;
+
+    const base = getBaseDomain();
+    const port = window.location.port ? `:${window.location.port}` : "";
+
+    const isLocalhost =
+      !base || base === "localhost" || base === "127.0.0.1";
+
+    // Detect which stacks the dual-stack probe actually saw. We rely on
+    // the [data-ds] elements that detectDualStack() populates.
+    const seen = (stack) => {
+      const el = document.querySelector(`[data-ds="${stack}"]`);
+      if (!el) return false;
+      const txt = el.textContent.trim();
+      return Boolean(txt) && txt !== "…" && txt !== "—";
+    };
+
+    // Localhost dev convenience: probe and trace via the current origin
+    // because there's no ipv4./ipv6. nginx routing in development.
+    const baseFor = (stack) =>
+      isLocalhost ? "" : `//${stack}.${base}${port}`;
+
+    const stacks = [];
+    if (isLocalhost || seen("ipv4")) stacks.push("ipv4");
+    if (isLocalhost || seen("ipv6")) stacks.push("ipv6");
+
+    if (stacks.length === 0) {
+      // No stack we could probe successfully. Hide the whole card.
+      const article = qs("#traceroute-section");
+      if (article) article.hidden = true;
+      return;
+    }
+
+    const sources = {};
+    let activeSource = null;
+    const radios = card.querySelectorAll('input[name="trace-stack"]');
+
+    const startStack = (stack) => {
+      const pane = card.querySelector(`[data-trace-stack="${stack}"]`);
+      if (!pane) return;
+      // Show this pane, hide others.
+      card
+        .querySelectorAll(".cptv-trace-pane")
+        .forEach((p) => (p.hidden = p !== pane));
+      // Already streaming for this stack? Nothing to do.
+      if (sources[stack]) {
+        activeSource = sources[stack];
+        return;
+      }
+      const url = `${baseFor(stack)}/traceroute/stream`;
+      const source = wireTraceroutePane(pane, url);
+      sources[stack] = source;
+      activeSource = source;
+    };
+
+    // Reveal the labels for stacks we'll actually use, and bind change.
+    stacks.forEach((stack, idx) => {
+      const label = qs(`#trace-tab-${stack}-label`, card);
+      if (label) label.hidden = false;
+      const radio = card.querySelector(
+        `input[name="trace-stack"][value="${stack}"]`,
+      );
+      if (radio && idx === 0) radio.checked = true;
+    });
+
+    radios.forEach((r) => {
+      r.addEventListener("change", () => {
+        if (r.checked) startStack(r.value);
+      });
+    });
+
+    // Auto-start the first available stack (matches existing UX).
+    startStack(stacks[0]);
+  }
+
+  // The dual-stack probe runs async; defer wiring until both probes
+  // have had a chance to populate the [data-ds] elements (or give up).
+  function wireTracerouteWhenStacksKnown() {
+    // detectDualStack uses ~1 round-trip per stack; 1.2s is comfortable
+    // headroom on broadband and still feels live on slower links.
+    window.setTimeout(wireTracerouteTabs, 1200);
   }
 
   // ---------- anycast PoP detection ----------
@@ -561,7 +660,7 @@
     wireHistoryClearButton();
     detectAnycastPop();
     detectResolver();
-    wireTracerouteStream();
+    wireTracerouteWhenStacksKnown();
     wireThemeToggle();
   });
 })();

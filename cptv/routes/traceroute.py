@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import logging
 
 from fastapi import APIRouter, Request, Response
@@ -12,6 +13,7 @@ from cptv.services.traceroute import (
     TracerouteBusyError,
     TracerouteError,
     TracerouteRateLimitedError,
+    TracerouteUnreachableError,
     format_json,
     format_text,
     run_mtr_cached,
@@ -72,6 +74,18 @@ def _register(templates: Jinja2Templates) -> APIRouter:
                 templates,
                 "Server is running too many traceroutes right now. Please try again shortly.",
                 status_code=503,
+            )
+        except TracerouteUnreachableError:
+            # The host has no route to this IP family. Common on /64-only
+            # rootless pods that don't pass IPv6 through to the container.
+            # Build the message from the (already-public) target family
+            # rather than the exception args so CodeQL is happy that no
+            # untrusted info reaches the client.
+            family = "IPv6" if isinstance(address, ipaddress.IPv6Address) else "IPv4"
+            return _error_response(
+                request,
+                templates,
+                f"no {family} route to your address from this host",
             )
         except TracerouteError:
             log.exception("traceroute failed for %s", address)

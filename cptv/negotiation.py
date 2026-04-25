@@ -37,6 +37,17 @@ def choose_format(request: Request, *, html_available: bool) -> Format:
     return "json"
 
 
+_TEXT_HINT = "\n\n# tip: append ?format=json for JSON, or see /help"
+
+
+def _with_hint(text: str, *, hint: bool) -> str:
+    """Append the standard 'append ?format=json' hint for plain-text users."""
+    if not hint:
+        return text
+    body = text.rstrip("\n")
+    return f"{body}{_TEXT_HINT}\n"
+
+
 def respond(
     request: Request,
     *,
@@ -45,7 +56,15 @@ def respond(
     html_context: Mapping[str, Any] | None = None,
     json_data: Any = None,
     text: str | None = None,
+    text_hint: bool = True,
 ) -> Response:
+    """Return the format the client asked for.
+
+    ``text_hint`` controls whether plain-text responses get a trailing
+    '# tip: append ?format=json …' comment line. Bare-IP echo endpoints
+    (``/ipv4`` and friends) opt out by passing ``text_hint=False`` so
+    ``MY_IP=$(curl -s ipv4.<domain>)`` keeps returning a clean IP.
+    """
     html_available = html_template is not None and templates is not None
     fmt = choose_format(request, html_available=html_available)
 
@@ -54,7 +73,7 @@ def respond(
         return templates.TemplateResponse(request, html_template, context)  # type: ignore[arg-type, union-attr]
 
     if fmt == "text" and text is not None:
-        return PlainTextResponse(text)
+        return PlainTextResponse(_with_hint(text, hint=text_hint))
 
     if fmt == "json" and json_data is not None:
         return JSONResponse(json_data)
@@ -63,7 +82,7 @@ def respond(
     if json_data is not None:
         return JSONResponse(json_data)
     if text is not None:
-        return PlainTextResponse(text)
+        return PlainTextResponse(_with_hint(text, hint=text_hint))
     if html_available:
         context = {"request": request, **(html_context or {})}
         return templates.TemplateResponse(request, html_template, context)  # type: ignore[arg-type, union-attr]

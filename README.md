@@ -70,10 +70,30 @@ PodName=cptv
 # Only the app port is published to the host loopback; nginx is the
 # only thing that talks to it. Valkey stays internal to the pod.
 PublishPort=127.0.0.1:8000:8000
+# Pasta is the rootless network helper Podman ships with; --ipv6 lets
+# the pod reach IPv6 destinations using the host's /64. Without this
+# the IPv6 traceroute on the home page fails with
+# "no IPv6 route to <addr> from this host".
+Network=pasta:--ipv6
 
 [Install]
 WantedBy=default.target
 ```
+
+> **IPv6 on a /64-only host (the common case for VPSes)**
+>
+> Podman's pasta network helper just borrows the host's IPv6 routes; you
+> do NOT need to delegate a sub-prefix or set up neighbour discovery
+> proxying. Verify with:
+>
+> ```sh
+> podman exec cptv ping -c 1 -6 2606:4700:4700::1111
+> ```
+>
+> If that fails but the host can reach the same address, double-check
+> that `/proc/sys/net/ipv6/conf/all/forwarding` is `1` (set in
+> `/etc/sysctl.d/`) and that the host firewall isn't dropping outbound
+> ICMPv6 from the pasta interface.
 
 #### `cptv-valkey.container`
 

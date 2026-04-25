@@ -25,6 +25,7 @@ def _register(templates: Jinja2Templates) -> APIRouter:
                     html_context={"heading": "Your IP", "value": None},
                     json_data={"ip": None, "protocol": None},
                     text="",
+                    text_hint=False,
                 )
             )
         classified = ip_service.classify(address)
@@ -36,6 +37,7 @@ def _register(templates: Jinja2Templates) -> APIRouter:
                 html_context={"heading": "Your IP", "value": classified.text},
                 json_data={"ip": classified.text, "protocol": classified.protocol},
                 text=classified.text,
+                text_hint=False,
             )
         )
 
@@ -53,6 +55,7 @@ def _register(templates: Jinja2Templates) -> APIRouter:
                 html_context={"heading": heading, "value": value},
                 json_data={key: value},
                 text=value or "",
+                text_hint=False,
             )
         )
 
