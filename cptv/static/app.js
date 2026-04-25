@@ -225,18 +225,30 @@
       row.removeAttribute("hx-swap-oob");
       if (existing) existing.replaceWith(row);
       else tbody.appendChild(row);
+      // Briefly flash the row to draw the eye to fresh measurements.
+      row.classList.add("cptv-hop-flash");
+      // Reflow to restart the animation reliably.
+      void row.offsetWidth;
+      window.setTimeout(() => row.classList.remove("cptv-hop-flash"), 700);
     };
+
+    card.classList.add("is-running");
+    const stopPulse = () => card.classList.remove("is-running");
 
     source.addEventListener("status", (ev) => setStatus(ev.data));
     source.addEventListener("hop", (ev) => swapHop(ev.data));
     source.addEventListener("done", (ev) => {
       setStatus(ev.data);
+      stopPulse();
       source.close();
     });
     source.addEventListener("error", (ev) => {
       // Browser fires a generic 'error' Event on connection problems with
       // empty data. Only render if the server sent a real message.
-      if (ev && typeof ev.data === "string" && ev.data) setStatus(ev.data);
+      if (ev && typeof ev.data === "string" && ev.data) {
+        setStatus(ev.data);
+        stopPulse();
+      }
     });
   }
 
