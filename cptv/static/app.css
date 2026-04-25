@@ -39,6 +39,34 @@
   overflow-wrap: anywhere;
 }
 
+/* DNSSEC card — label + verdict on one line in a flex row. The label
+   alone is the disclosure trigger; the badge is inert. We don't use
+   <details>/<summary> so that the badge can sit outside the click
+   target without fighting browser <details>-content suppression. */
+.cptv-dnssec-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.4em;
+  margin-block-end: 0.4em;
+}
+.cptv-dnssec-toggle {
+  cursor: pointer;
+  color: var(--pico-primary, #0a4f9c);
+  text-decoration: underline;
+  text-decoration-color: var(--pico-primary, #0a4f9c);
+  text-underline-offset: 0.15em;
+  user-select: none;
+}
+.cptv-dnssec-toggle:hover {
+  text-decoration-thickness: 2px;
+}
+.cptv-dnssec-toggle:focus-visible {
+  outline: 2px solid var(--pico-primary-focus, #0a4f9c);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* ---------- responsive header (PLAN \u00a74.13 / mobile UX) ---------- */
 
 /* The header is a flex row: brand on the left, controls on the right.

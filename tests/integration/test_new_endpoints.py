@@ -262,6 +262,24 @@ def test_dnssec_card_mentions_rhybar(client: TestClient):
     assert "CZ.NIC" in section
 
 
+def test_dnssec_label_and_badge_share_one_line(client: TestClient):
+    """The 'DNSSEC validation:' label and the verdict badge live in the
+    SAME <p> (a flex row) so they appear side-by-side."""
+    r = client.get("/", headers={**V4, "Accept": "text/html"})
+    body = r.text
+    import re
+
+    m = re.search(
+        r'<p[^>]*class="cptv-dnssec-row".*?</p>', body, re.DOTALL
+    )
+    assert m, "cptv-dnssec-row not found"
+    row = m.group(0)
+    assert "cptv-dnssec-toggle" in row
+    assert 'id="dnssec-status"' in row
+    # The explainer is a separate hidden <p>, NOT inside the row.
+    assert "rhybar.cz" not in row
+
+
 def test_ip_card_warns_on_private_ip(client: TestClient):
     """RFC1918 private IPs still get the (private) annotation."""
     r = client.get(
