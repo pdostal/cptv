@@ -158,7 +158,11 @@ def _register(templates: Jinja2Templates) -> APIRouter:
                     "<p><mark>⚠️ Could not determine client IP.</mark></p>",
                 )
 
-            return StreamingResponse(_err(), media_type="text/event-stream")
+            return StreamingResponse(
+                _err(),
+                media_type="text/event-stream",
+                headers={"Access-Control-Allow-Origin": "*"},
+            )
 
         async def event_generator():
             async for ev in stream_mtr_cached(address):
@@ -189,6 +193,10 @@ def _register(templates: Jinja2Templates) -> APIRouter:
                 # Prevent buffering by intermediaries (nginx in particular).
                 "Cache-Control": "no-cache",
                 "X-Accel-Buffering": "no",
+                # The home page on https://secure.<base> opens this stream
+                # against //ipv4.<base> and //ipv6.<base>; the browser
+                # blocks cross-origin EventSource bodies without CORS.
+                "Access-Control-Allow-Origin": "*",
             },
         )
 

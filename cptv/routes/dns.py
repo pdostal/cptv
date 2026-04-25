@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, Response
 from fastapi.templating import Jinja2Templates
 
-from cptv.negotiation import respond
+from cptv.negotiation import add_public_cors, respond
 from cptv.services import dns as dns_service
 
 router = APIRouter()
@@ -35,13 +35,15 @@ def _register(templates: Jinja2Templates) -> APIRouter:
                 ]
             )
 
-        return respond(
-            request,
-            templates=templates,
-            html_template="section_stub.html",
-            html_context={"heading": "DNS", "data": json_data, "present": True},
-            json_data=json_data,
-            text=text,
+        return add_public_cors(
+            respond(
+                request,
+                templates=templates,
+                html_template="section_stub.html",
+                html_context={"heading": "DNS", "data": json_data, "present": True},
+                json_data=json_data,
+                text=text,
+            )
         )
 
     return router

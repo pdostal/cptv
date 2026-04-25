@@ -93,9 +93,11 @@ def respond(
 def add_public_cors(response: Response) -> Response:
     """Mark a response as safe for cross-origin reads from anywhere.
 
-    Used by the IP echo endpoints (/ip, /ipv4, /ipv6 and aliases) so the
-    home page's dual-stack probe — which runs at ``cptv.cz`` and fetches
-    ``ipv4.cptv.cz`` / ``ipv6.cptv.cz`` — can actually read the body.
+    Used by the IP echo endpoints (/ip, /ipv4, /ipv6 and aliases), the
+    sectional endpoints (/asn, /isp, /geoip, /dns) and the SSE traceroute
+    stream so the home page can probe the v4 and v6 stacks side by side
+    via ``//ipv4.<base>/…`` and ``//ipv6.<base>/…``. Without this header
+    the browser silently withholds cross-origin response bodies.
 
     These endpoints are public, idempotent, contain no secrets, and
     accept no credentials, so wildcard CORS is safe. We deliberately
