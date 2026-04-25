@@ -22,7 +22,7 @@ def test_ipv4_subdomain_rewrites_root_to_ipv4(client: TestClient):
         headers=_curl(FWD_V4, BASE_DOMAIN, {"Host": "ipv4.example.test"}),
     )
     assert r.status_code == 200
-    assert r.text == "203.0.113.42"
+    assert r.text.rstrip("\n") == "203.0.113.42"
 
 
 def test_ipv6_subdomain_rewrites_root_to_ipv6(client: TestClient):
@@ -31,7 +31,7 @@ def test_ipv6_subdomain_rewrites_root_to_ipv6(client: TestClient):
         headers=_curl(FWD_V6, BASE_DOMAIN, {"Host": "ipv6.example.test"}),
     )
     assert r.status_code == 200
-    assert r.text == "2001:db8::1"
+    assert r.text.rstrip("\n") == "2001:db8::1"
 
 
 def test_ipv4_subdomain_v6_client_returns_empty(client: TestClient):
@@ -40,7 +40,7 @@ def test_ipv4_subdomain_v6_client_returns_empty(client: TestClient):
         headers=_curl(FWD_V6, BASE_DOMAIN, {"Host": "ipv4.example.test"}),
     )
     assert r.status_code == 200
-    assert r.text == ""
+    assert r.text.rstrip("\n") == ""
 
 
 def test_apex_host_returns_aggregated_not_single_stack(client: TestClient):
@@ -62,7 +62,7 @@ def test_subdomain_detection_ignores_port(client: TestClient):
         headers=_curl(FWD_V4, BASE_DOMAIN, {"Host": "ipv4.example.test:8080"}),
     )
     assert r.status_code == 200
-    assert r.text == "203.0.113.42"
+    assert r.text.rstrip("\n") == "203.0.113.42"
 
 
 def test_subdomain_does_not_rewrite_other_paths(client: TestClient):

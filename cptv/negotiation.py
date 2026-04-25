@@ -41,11 +41,20 @@ _TEXT_HINT = "\n\n# tip: append ?format=json for JSON, or see /help"
 
 
 def _with_hint(text: str, *, hint: bool) -> str:
-    """Append the standard 'append ?format=json' hint for plain-text users."""
-    if not hint:
-        return text
+    """Render the plain-text body with a trailing newline.
+
+    Always appends the trailing newline (so zsh doesn't print a reverse-
+    video '%' to mark the missing line break). When ``hint=True`` we also
+    append the '# tip: …' line that points readers at JSON / /help.
+
+    Shell capture stays clean either way: ``$()`` strips trailing
+    newlines automatically, so ``MY_IP=$(curl ipv4.cptv.cz)`` still
+    yields a bare IP even though the response now ends with '\\n'.
+    """
     body = text.rstrip("\n")
-    return f"{body}{_TEXT_HINT}\n"
+    if hint:
+        return f"{body}{_TEXT_HINT}\n"
+    return f"{body}\n"
 
 
 def respond(

@@ -49,7 +49,7 @@ def test_asn_json_without_db(client: TestClient):
 def test_isp_text_without_db(client: TestClient):
     r = client.get("/isp", headers=_headers(V4, CURL))
     assert r.status_code == 200
-    assert r.text == "—"
+    assert r.text.rstrip("\n") == "—"
 
 
 # ---------- /dns ----------
@@ -179,6 +179,16 @@ def test_details_endpoints_are_gone(client: TestClient):
     for path in ("/details", "/more", "/api/v1/details"):
         r = client.get(path, headers={**V4, "Accept": "text/html"})
         assert r.status_code == 404, path
+
+
+def test_404_body_ends_with_newline(client: TestClient):
+    """Custom 404 handler appends \\n so curl + zsh stay tidy."""
+    r = client.get("/totally-bogus-path", headers={"Accept": "application/json"})
+    assert r.status_code == 404
+    assert r.text.endswith("\n")
+    import json
+
+    assert json.loads(r.text)["detail"] == "Not Found"
 
 
 def test_text_hint_appended_on_aggregated(client: TestClient):
