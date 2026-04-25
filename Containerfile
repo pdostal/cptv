@@ -9,8 +9,12 @@ COPY scripts/build-assets.mjs ./scripts/build-assets.mjs
 RUN mkdir -p cptv/static && node scripts/build-assets.mjs
 
 # ---- stage 2: resolve python deps ----
+# WORKDIR matches the runtime path so console-script shebangs (e.g.
+# /app/.venv/bin/uvicorn) point at a path that exists in the runtime
+# image. Otherwise they bake in the build-stage path and `exec uvicorn`
+# fails at startup with "No such file or directory".
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS pydeps
-WORKDIR /build
+WORKDIR /app
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never
@@ -40,7 +44,7 @@ RUN python3 -m pip install --no-cache-dir --upgrade 'pip>=25.3' \
     && useradd --system --create-home --uid 10001 cptv
 WORKDIR /app
 
-COPY --from=pydeps /build/.venv /app/.venv
+COPY --from=pydeps /app/.venv /app/.venv
 COPY --from=assets /build/cptv/static /app/cptv/static
 COPY cptv/ /app/cptv/
 COPY pyproject.toml /app/pyproject.toml
