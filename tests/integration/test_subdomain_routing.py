@@ -174,3 +174,36 @@ def test_responsive_header_uses_details_hamburger(client: TestClient):
     assert 'class="cptv-nav-toggle"' in body
     assert 'class="cptv-nav-menu"' in body
     assert 'aria-expanded="false"' in body
+
+
+def test_nav_hides_home_link_on_home(client: TestClient):
+    """The 'home' link is redundant when we ARE the home page."""
+    r = client.get(
+        "/",
+        headers={**FWD_V4, **BASE_DOMAIN, "Host": "example.test", "Accept": "text/html"},
+    )
+    body = r.text
+    # Pull just the nav menu so we don't false-match other 'href="/"' bits.
+    import re
+
+    m = re.search(r'<ul[^>]*id="cptv-nav-menu".*?</ul>', body, re.DOTALL)
+    assert m, "nav menu not found"
+    menu = m.group(0)
+    assert 'href="/"' not in menu
+    assert 'href="/help"' in menu
+
+
+def test_nav_hides_help_link_on_help(client: TestClient):
+    """The 'help' link is redundant when we ARE the help page."""
+    r = client.get(
+        "/help",
+        headers={**FWD_V4, **BASE_DOMAIN, "Host": "example.test", "Accept": "text/html"},
+    )
+    body = r.text
+    import re
+
+    m = re.search(r'<ul[^>]*id="cptv-nav-menu".*?</ul>', body, re.DOTALL)
+    assert m, "nav menu not found"
+    menu = m.group(0)
+    assert 'href="/help"' not in menu
+    assert 'href="/"' in menu
