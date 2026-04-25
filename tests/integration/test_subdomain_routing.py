@@ -152,3 +152,23 @@ def test_secure_offers_link_to_insecure(client: TestClient):
     )
     assert 'href="http://example.test/"' in r.text
     assert "insecure" in r.text
+
+
+def test_responsive_header_uses_details_hamburger(client: TestClient):
+    r = client.get(
+        "/",
+        headers={
+            **FWD_V4,
+            **BASE_DOMAIN,
+            "Host": "example.test",
+            "Accept": "text/html",
+        },
+    )
+    body = r.text
+    # Brand link to / and the tagline class JS / CSS hide on narrow screens.
+    assert 'class="cptv-brand"' in body
+    assert 'class="cptv-brand-tagline"' in body
+    # <details>/<summary> hamburger so the menu collapses without JS.
+    assert "cptv-nav-disclosure" in body
+    assert "cptv-nav-toggle" in body
+    assert "cptv-nav-menu" in body

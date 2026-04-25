@@ -104,7 +104,11 @@ def test_help_html_lists_traceroute_streaming(client: TestClient):
     assert "/traceroute/stream" in r.text
     assert "/traceroute.json" in r.text
     assert "?format=json" in r.text
-    assert "/details" not in r.text
+    # The removed /details endpoint must not be linked anywhere in the
+    # body; the substring would also match the </details> closing tag,
+    # so look for the URL form specifically.
+    assert 'href="/details"' not in r.text
+    assert "<code>/details</code>" not in r.text
 
 
 def test_traceroute_html(client: TestClient):
