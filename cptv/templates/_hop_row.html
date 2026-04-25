@@ -1,6 +1,9 @@
-{# Single traceroute hop row used by SSE streaming. Rendered server-side so the SSE swap is just HTML. #}
+{# Single traceroute hop row used by SSE streaming. Rendered server-side so
+   the SSE swap is just HTML. The id + hx-swap-oob attribute let later
+   emissions for the same hop number replace the existing row in place
+   (true progressive updates). #}
 {% if hop.ip %}
-<tr>
+<tr id="hop-{{ hop.hop }}" hx-swap-oob="true">
   <td>{{ hop.hop }}</td>
   <td><code>{{ hop.ip }}</code></td>
   <td>{{ hop.rdns or "—" }}</td>
@@ -13,8 +16,8 @@
   <td>{% if hop.worst_ms is not none %}{{ "%.1f"|format(hop.worst_ms) }}ms{% else %}—{% endif %}</td>
 </tr>
 {% else %}
-<tr>
+<tr id="hop-{{ hop.hop }}" hx-swap-oob="true">
   <td>{{ hop.hop }}</td>
-  <td colspan="7"><code>* * *</code></td>
+  <td colspan="7"><code>* * *</code> <small>{{ "%.1f"|format(hop.loss_pct) }}% loss</small></td>
 </tr>
 {% endif %}

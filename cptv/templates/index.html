@@ -194,13 +194,8 @@ http = data.http %} {% set quick_links = data.quick_links %}
 
 <article id="traceroute-section">
   <header><strong>🛰️ Traceroute</strong></header>
-  <div
-    id="traceroute-card"
-    hx-ext="sse"
-    sse-connect="/traceroute/stream"
-    sse-close="done"
-  >
-    <div id="traceroute-status" sse-swap="status,error,done" hx-swap="innerHTML">
+  <div id="traceroute-card" data-stream-url="/traceroute/stream">
+    <div id="traceroute-status">
       <p><small>Connecting…</small></p>
     </div>
     <figure>
@@ -217,8 +212,7 @@ http = data.http %} {% set quick_links = data.quick_links %}
             <th scope="col">Worst</th>
           </tr>
         </thead>
-        <tbody id="traceroute-hops" sse-swap="hop" hx-swap="beforeend">
-        </tbody>
+        <tbody id="traceroute-hops"></tbody>
       </table>
     </figure>
     <noscript>

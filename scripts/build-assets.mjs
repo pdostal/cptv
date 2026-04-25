@@ -12,7 +12,6 @@ const out = resolve(root, "cptv", "static", "vendor");
 
 const files = [
   ["node_modules/htmx.org/dist/htmx.min.js", "htmx.min.js"],
-  ["node_modules/htmx-ext-sse/dist/sse.min.js", "htmx-ext-sse.min.js"],
   ["node_modules/@picocss/pico/css/pico.min.css", "pico.min.css"],
 ];
 

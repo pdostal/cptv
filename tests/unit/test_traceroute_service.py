@@ -420,29 +420,103 @@ class TestConcurrencyCap:
         sem.release()
 
 
+class TestStreamMtrLive:
+    @pytest.mark.asyncio
+    @patch("cptv.services.traceroute._reverse_dns", return_value=None)
+    @patch("cptv.services.traceroute.asn_service.lookup", return_value=None)
+    async def test_parses_raw_lines_into_hop_events(self, _asn, _rdns):
+        """Feed synthetic mtr --raw lines through the live streamer."""
+        from cptv.services import traceroute as t
+
+        raw = [
+            b"h 0 10.0.0.1\n",
+            b"x 0 1\n",
+            b"p 0 1234 1\n",
+            b"h 1 8.8.8.8\n",
+            b"x 1 2\n",
+            b"p 1 5678 2\n",
+            b"m 1 1234 0 1 64\n",
+        ]
+
+        async def fake_lines(_target):
+            for line in raw:
+                yield line
+
+        with patch.object(t, "_stream_mtr_raw_lines", side_effect=fake_lines):
+            events = []
+            async for ev in t.stream_mtr_live(ipaddress.ip_address("8.8.8.8")):
+                events.append(ev)
+
+        # Each h, p, m event for a hop with an IP should yield a hop event.
+        assert all(e.event == "hop" for e in events)
+        # Last emission for hop 1 should include MPLS labels and avg_ms.
+        last_hop_1 = [e for e in events if e.data["hop"] == 2][-1]
+        assert last_hop_1["ip"] if False else last_hop_1.data["ip"] == "8.8.8.8"
+        # 5678 us → 5.678 ms, rounded to 2 decimals.
+        assert last_hop_1.data["avg_ms"] == 5.68
+        assert len(last_hop_1.data["mpls"]) == 1
+
+
+def _live_event(hop_data):
+    from cptv.services.traceroute import StreamEvent
+
+    return StreamEvent(event="hop", data=hop_data)
+
+
+async def _fake_live_stream(events):
+    for e in events:
+        yield e
+
+
 class TestStreamMtrCached:
     @pytest.mark.asyncio
     @patch("cptv.services.traceroute.get_valkey", new_callable=AsyncMock, return_value=None)
-    @patch("cptv.services.traceroute.run_mtr", new_callable=AsyncMock)
     @patch("cptv.services.traceroute.asyncio.sleep", new_callable=AsyncMock)
-    async def test_stream_no_cache_emits_started_hops_done(self, mock_sleep, mock_run, mock_valkey):
-        mock_run.return_value = TracerouteResult(
-            target="8.8.8.8",
-            ran_at="2024-01-01T00:00:00+00:00",
-            hops=[
-                Hop(hop=1, ip="10.0.0.1", loss_pct=0.0, avg_ms=1.0),
-                Hop(hop=2, ip="8.8.8.8", loss_pct=0.0, avg_ms=5.0),
-            ],
-        )
-        events = []
-        async for ev in stream_mtr_cached(ipaddress.ip_address("8.8.8.8")):
-            events.append(ev)
+    async def test_stream_no_cache_emits_started_hops_done(self, mock_sleep, mock_valkey):
+        sample_events = [
+            _live_event(
+                {
+                    "hop": 1,
+                    "ip": "10.0.0.1",
+                    "rdns": None,
+                    "asn": None,
+                    "asn_name": None,
+                    "loss_pct": 0.0,
+                    "avg_ms": 1.0,
+                    "best_ms": 1.0,
+                    "worst_ms": 1.0,
+                    "mpls": [],
+                }
+            ),
+            _live_event(
+                {
+                    "hop": 2,
+                    "ip": "8.8.8.8",
+                    "rdns": None,
+                    "asn": None,
+                    "asn_name": None,
+                    "loss_pct": 0.0,
+                    "avg_ms": 5.0,
+                    "best_ms": 5.0,
+                    "worst_ms": 5.0,
+                    "mpls": [],
+                }
+            ),
+        ]
+
+        with patch(
+            "cptv.services.traceroute.stream_mtr_live",
+            side_effect=lambda addr: _fake_live_stream(sample_events),
+        ):
+            events = []
+            async for ev in stream_mtr_cached(ipaddress.ip_address("8.8.8.8")):
+                events.append(ev)
 
         kinds = [e.event for e in events]
         assert kinds == ["started", "hop", "hop", "done"]
         assert events[0].data["cached"] is False
         assert events[1].data["ip"] == "10.0.0.1"
-        assert events[3].data["cached"] is False
+        assert events[-1].data["cached"] is False
 
     @pytest.mark.asyncio
     @patch("cptv.services.traceroute.run_mtr", new_callable=AsyncMock)
@@ -517,15 +591,19 @@ class TestStreamMtrCached:
         mock_run.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("cptv.services.traceroute.run_mtr", new_callable=AsyncMock)
     @patch("cptv.services.traceroute.asyncio.sleep", new_callable=AsyncMock)
-    async def test_stream_error_emits_error_event(self, mock_sleep, mock_run):
-        mock_run.side_effect = TracerouteError("mtr exploded")
+    async def test_stream_error_emits_error_event(self, mock_sleep):
+        async def boom(_addr):
+            raise TracerouteError("mtr exploded")
+            yield  # pragma: no cover
 
-        with patch(
-            "cptv.services.traceroute.get_valkey",
-            new_callable=AsyncMock,
-            return_value=None,
+        with (
+            patch(
+                "cptv.services.traceroute.get_valkey",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch("cptv.services.traceroute.stream_mtr_live", side_effect=boom),
         ):
             events = []
             async for ev in stream_mtr_cached(ipaddress.ip_address("8.8.8.8")):

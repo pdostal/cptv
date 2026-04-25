@@ -158,6 +158,53 @@
     }, 8000);
   }
 
+  // ---------- traceroute SSE ----------
+  // The server emits HTML fragments per event. We attach a raw EventSource
+  // and place each event's payload into the right node by element id, so
+  // hop rows can be replaced in place as their measurements update.
+  function wireTracerouteStream() {
+    const card = qs("#traceroute-card");
+    if (!card) return;
+    const url = card.dataset.streamUrl;
+    if (!url || typeof window.EventSource !== "function") return;
+
+    const status = qs("#traceroute-status", card);
+    const tbody = qs("#traceroute-hops", card);
+    if (!status || !tbody) return;
+
+    const source = new window.EventSource(url);
+
+    const setStatus = (html) => {
+      status.innerHTML = html;
+    };
+
+    const swapHop = (html) => {
+      // The HTML is a single <tr id="hop-N">. Parse it, then replace any
+      // existing row with the same id, otherwise append.
+      const wrapper = document.createElement("tbody");
+      wrapper.innerHTML = html.trim();
+      const row = wrapper.firstElementChild;
+      if (!row || row.tagName !== "TR" || !row.id) return;
+      const existing = tbody.querySelector(`#${CSS.escape(row.id)}`);
+      // OOB attribute is server-side noise here — strip it for cleanliness.
+      row.removeAttribute("hx-swap-oob");
+      if (existing) existing.replaceWith(row);
+      else tbody.appendChild(row);
+    };
+
+    source.addEventListener("status", (ev) => setStatus(ev.data));
+    source.addEventListener("hop", (ev) => swapHop(ev.data));
+    source.addEventListener("done", (ev) => {
+      setStatus(ev.data);
+      source.close();
+    });
+    source.addEventListener("error", (ev) => {
+      // Browser fires a generic 'error' Event on connection problems with
+      // empty data. Only render if the server sent a real message.
+      if (ev && typeof ev.data === "string" && ev.data) setStatus(ev.data);
+    });
+  }
+
   // ---------- anycast PoP detection ----------
   // Cloudflare's /cdn-cgi/trace returns plaintext key=value lines including
   // a `colo=` field naming the airport-style PoP code that served you. This
@@ -341,5 +388,6 @@
     trackHistory();
     wireHistoryClearButton();
     detectAnycastPop();
+    wireTracerouteStream();
   });
 })();

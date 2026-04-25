@@ -339,9 +339,199 @@ class StreamEvent:
     data: dict
 
 
-# Delay between progressive hop emissions in seconds. Small enough to feel
-# live, large enough to avoid hammering the client.
+# Delay between progressive hop emissions when *replaying* from cache.
+# Small enough to feel live, large enough to avoid hammering the client.
 _STREAM_HOP_GAP = 0.12
+
+
+async def _stream_mtr_raw_lines(target: IPAddress) -> AsyncIterator[bytes]:
+    """Spawn ``mtr --raw`` and yield each stdout line as it arrives.
+
+    Subject to the global concurrency cap (acquires a slot up-front and
+    releases when the subprocess exits or the consumer stops iterating).
+    """
+    settings = get_settings()
+    target_str = str(target)
+    cmd = [
+        settings.mtr_path,
+        "--raw",
+        "--no-dns",
+        "--mpls",
+        "-c",
+        str(settings.mtr_count),
+        target_str,
+    ]
+
+    sem = _get_semaphore()
+    wait = settings.traceroute_concurrency_wait_seconds
+    try:
+        await asyncio.wait_for(sem.acquire(), timeout=wait if wait > 0 else None)
+    except TimeoutError as exc:
+        msg = (
+            f"too many concurrent traceroutes (cap={settings.traceroute_max_concurrency}); "
+            f"waited {wait}s with no slot"
+        )
+        raise TracerouteBusyError(msg) from exc
+
+    proc: asyncio.subprocess.Process | None = None
+    try:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:
+            msg = f"mtr binary not found at '{settings.mtr_path}'"
+            raise TracerouteError(msg) from exc
+        except OSError as exc:
+            msg = f"failed to run mtr: {exc}"
+            raise TracerouteError(msg) from exc
+
+        assert proc.stdout is not None  # noqa: S101
+        try:
+            async with asyncio.timeout(_SUBPROCESS_TIMEOUT):
+                async for line in proc.stdout:
+                    yield line
+        except TimeoutError as exc:
+            msg = f"mtr timed out after {_SUBPROCESS_TIMEOUT}s for {target_str}"
+            raise TracerouteError(msg) from exc
+
+        await proc.wait()
+        if proc.returncode not in (0, None):
+            err = b""
+            if proc.stderr is not None:
+                err = await proc.stderr.read()
+            msg = f"mtr exited {proc.returncode}: {err.decode(errors='replace').strip()}"
+            raise TracerouteError(msg)
+    finally:
+        if proc is not None and proc.returncode is None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except ProcessLookupError:
+                pass
+        sem.release()
+
+
+@dataclass
+class _LiveHopState:
+    """Mutable per-hop accumulator while parsing raw mtr output."""
+
+    pos: int
+    ip: str | None = None
+    sent: int = 0
+    received: int = 0
+    rtt_us_samples: list[int] = field(default_factory=list)
+    mpls: list[MplsLabel] = field(default_factory=list)
+    rdns: str | None = None
+    asn: int | None = None
+    asn_name: str | None = None
+    asn_resolved: bool = False
+    rdns_resolved: bool = False
+
+    def to_hop(self) -> Hop:
+        if not self.rtt_us_samples:
+            avg = best = worst = None
+        else:
+            samples_ms = [v / 1000.0 for v in self.rtt_us_samples]
+            avg = round(sum(samples_ms) / len(samples_ms), 2)
+            best = round(min(samples_ms), 2)
+            worst = round(max(samples_ms), 2)
+        loss = 0.0 if self.sent == 0 else round(100.0 * (1 - self.received / self.sent), 1)
+        return Hop(
+            hop=self.pos,
+            ip=self.ip,
+            rdns=self.rdns,
+            asn=self.asn,
+            asn_name=self.asn_name,
+            loss_pct=loss,
+            avg_ms=avg,
+            best_ms=best,
+            worst_ms=worst,
+            mpls=list(self.mpls),
+        )
+
+
+def _enrich_live_hop(state: _LiveHopState) -> None:
+    """Populate rDNS + ASN on a hop state once an IP is known."""
+    if state.ip is None:
+        return
+    if not state.rdns_resolved:
+        state.rdns = _reverse_dns(state.ip)
+        state.rdns_resolved = True
+    if not state.asn_resolved:
+        try:
+            asn_result = asn_service.lookup(ipaddress.ip_address(state.ip))
+        except ValueError:
+            asn_result = None
+        if asn_result is not None:
+            state.asn = asn_result.number
+            state.asn_name = asn_result.name
+        state.asn_resolved = True
+
+
+async def stream_mtr_live(target: IPAddress) -> AsyncIterator[StreamEvent]:
+    """Stream true hop-by-hop traceroute progress from ``mtr --raw``.
+
+    Emits a ``hop`` event the first time a hop is observed and every time
+    its measurements update, so the UI can render rows the moment hops
+    answer instead of waiting for the full report. Uses out-of-band swaps
+    keyed by ``hop-{n}`` so duplicate emissions update the existing row.
+
+    Caller is responsible for cache lookup / locking. The blocking
+    :func:`run_mtr` path remains for JSON / text consumers.
+    """
+    states: dict[int, _LiveHopState] = {}
+
+    async for raw_line in _stream_mtr_raw_lines(target):
+        line = raw_line.decode(errors="replace").strip()
+        if not line:
+            continue
+        parts = line.split()
+        kind = parts[0]
+        try:
+            if kind == "h" and len(parts) >= 3:
+                pos = int(parts[1]) + 1  # mtr raw is 0-indexed
+                state = states.setdefault(pos, _LiveHopState(pos=pos))
+                state.ip = parts[2]
+                _enrich_live_hop(state)
+                yield StreamEvent(event="hop", data=asdict(state.to_hop()))
+            elif kind == "x" and len(parts) >= 3:
+                pos = int(parts[1]) + 1
+                state = states.setdefault(pos, _LiveHopState(pos=pos))
+                state.sent += 1
+                # No emission — sent count alone changes loss but is volatile.
+            elif kind == "p" and len(parts) >= 4:
+                pos = int(parts[1]) + 1
+                state = states.setdefault(pos, _LiveHopState(pos=pos))
+                state.received += 1
+                state.rtt_us_samples.append(int(parts[2]))
+                _enrich_live_hop(state)
+                yield StreamEvent(event="hop", data=asdict(state.to_hop()))
+            elif kind == "m" and len(parts) >= 6:
+                pos = int(parts[1]) + 1
+                state = states.setdefault(pos, _LiveHopState(pos=pos))
+                state.mpls.append(
+                    MplsLabel(
+                        label=int(parts[2]),
+                        tc=int(parts[3]),
+                        s=int(parts[4]),
+                        ttl=int(parts[5]),
+                    )
+                )
+                if state.ip is not None:
+                    yield StreamEvent(event="hop", data=asdict(state.to_hop()))
+            # Other line types (d, t) ignored.
+        except (ValueError, IndexError):
+            log.debug("ignoring malformed mtr line: %r", line)
+            continue
+
+    # Final flush: emit any sent-but-no-reply hops with their final loss%.
+    for pos in sorted(states):
+        state = states[pos]
+        if state.ip is None and state.sent > 0:
+            yield StreamEvent(event="hop", data=asdict(state.to_hop()))
 
 
 async def stream_mtr_cached(
@@ -408,36 +598,53 @@ async def stream_mtr_cached(
         await r.set(lock_key, "1", ex=_SUBPROCESS_TIMEOUT + 10)
 
     # ---- live run ----
+    nat = _nat_warning(address)
+    yield StreamEvent(
+        event="started",
+        data={
+            "target": str(address),
+            "cached": False,
+            "cache_age": 0,
+            "refreshes_in": ttl,
+            "nat_warning": nat,
+        },
+    )
     try:
-        # Announce start before the (potentially slow) mtr call so the UI
-        # can flip into the loading state immediately.
-        yield StreamEvent(
-            event="started",
-            data={
-                "target": str(address),
-                "cached": False,
-                "cache_age": 0,
-                "refreshes_in": ttl,
-            },
-        )
+        latest_hops: dict[int, Hop] = {}
         try:
-            result = await run_mtr(address)
+            async for ev in stream_mtr_live(address):
+                if ev.event == "hop":
+                    latest_hops[ev.data["hop"]] = Hop(
+                        hop=ev.data["hop"],
+                        ip=ev.data.get("ip"),
+                        rdns=ev.data.get("rdns"),
+                        asn=ev.data.get("asn"),
+                        asn_name=ev.data.get("asn_name"),
+                        loss_pct=ev.data.get("loss_pct", 0.0),
+                        avg_ms=ev.data.get("avg_ms"),
+                        best_ms=ev.data.get("best_ms"),
+                        worst_ms=ev.data.get("worst_ms"),
+                        mpls=[MplsLabel(**m) for m in ev.data.get("mpls", [])],
+                    )
+                yield ev
         except Exception as exc:
-            if r is not None:
-                await r.delete(lock_key)
             log.exception("traceroute stream failed for %s", address)
             yield StreamEvent(event="error", data={"error": str(exc)})
             return
 
-        # Persist to cache before streaming hops so subsequent requests hit it.
+        # Persist the final aggregated result to cache.
+        result = TracerouteResult(
+            target=str(address),
+            ran_at=datetime.now(tz=UTC).isoformat(),
+            hops=[latest_hops[pos] for pos in sorted(latest_hops)],
+            nat_warning=nat,
+        )
         if r is not None:
-            serialized = json.dumps(asdict(result))
-            await r.set(key, serialized, ex=ttl)
-            await r.delete(lock_key)
-
-        for hop in result.hops:
-            yield StreamEvent(event="hop", data=asdict(hop))
-            await asyncio.sleep(_STREAM_HOP_GAP)
+            try:
+                serialized = json.dumps(asdict(result))
+                await r.set(key, serialized, ex=ttl)
+            except Exception:  # noqa: BLE001
+                log.exception("failed to cache traceroute result for %s", address)
 
         yield StreamEvent(
             event="done",
