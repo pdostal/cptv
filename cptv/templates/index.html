@@ -178,45 +178,12 @@ http = data.http %} {% set quick_links = data.quick_links %}
       <small>Resolver detection probe requires JavaScript.</small>
     </p>
   </noscript>
-  {# Custom toggle (no <details>) so the label and verdict badge sit
-     on the same line in a flex row. The badge is inert; only the
-     underlined label expands the explainer. #}
-  <p class="cptv-dnssec-row">
-    <span
-      class="cptv-dnssec-toggle"
-      role="button"
-      tabindex="0"
-      aria-expanded="false"
-      aria-controls="dnssec-explainer"
-      >DNSSEC validation:</span
-    >
+  <p>
     <span id="dnssec-status" aria-live="polite">⚪ checking…</span>
   </p>
-  <p id="dnssec-explainer" hidden>
-    <small>
-      Tested by loading an image from
-      <a
-        href="https://rhybar.cz/"
-        target="_blank"
-        rel="noopener noreferrer"
-        ><code>rhybar.cz</code></a
-      >
-      — a domain CZ.NIC publishes with a deliberately bogus DNSSEC
-      signature. If your resolver validates DNSSEC the load fails
-      and the test reports OK.
-    </small>
-  </p>
-  <noscript>
-    {# JS-disabled visitors get the explainer permanently visible
-       and the toggle becomes plain text \u2014 the JS probe wouldn't run
-       anyway, so the badge stays at '\u26aa checking\u2026'. #}
-    <style>
-      #dnssec-explainer {
-        display: block !important;
-      }
-    </style>
-    <p><small>DNSSEC validation check requires JavaScript.</small></p>
-  </noscript>
+  <noscript
+    ><small>DNSSEC validation check requires JavaScript.</small></noscript
+  >
 </article>
 
 <article id="timing-section">

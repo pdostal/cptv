@@ -298,30 +298,6 @@
   // a slow network shouldn't make us claim 'validating' when the resolver
   // might in fact return the bogus record.
 
-  // Toggles the DNSSEC explainer panel. Plain <button>-style markup
-  // instead of <details> so the badge can sit next to the label
-  // without being inside the click target.
-  function wireDnssecExplainerToggle() {
-    const toggle = qs(".cptv-dnssec-toggle");
-    const panel = qs("#dnssec-explainer");
-    if (!toggle || !panel) return;
-
-    const setOpen = (open) => {
-      toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      panel.hidden = !open;
-    };
-
-    on(toggle, "click", () =>
-      setOpen(toggle.getAttribute("aria-expanded") !== "true"),
-    );
-    on(toggle, "keydown", (ev) => {
-      if (ev.key === "Enter" || ev.key === " ") {
-        ev.preventDefault();
-        setOpen(toggle.getAttribute("aria-expanded") !== "true");
-      }
-    });
-  }
-
   function checkDnssec() {
     const badge = qs("#dnssec-status");
     if (!badge) return;
@@ -353,7 +329,7 @@
           "🔴 NOT OK — your resolver does not validate DNSSEC (bogus record accepted)";
       } else {
         badge.textContent =
-          "🟢 OK — your resolver validates DNSSEC (bogus record rejected)";
+          "🟢 OK — your resolver validates DNSSEC (bogus rhybar.cz record rejected)";
       }
     };
 
@@ -938,7 +914,6 @@
   document.addEventListener("DOMContentLoaded", async () => {
     checkClockSkew();
     checkDnssec();
-    wireDnssecExplainerToggle();
     wireGeolocationButton();
     wireHistoryClearButton();
     detectAnycastPop();
