@@ -50,14 +50,16 @@ def test_apex_host_returns_aggregated_not_single_stack(client: TestClient):
     )
     assert r.status_code == 200
     assert "203.0.113.42" in r.text
-    # Aggregated text output includes IP + RTT + Server lines;
+    # Aggregated text output includes the IP block + RTT line;
     # single-stack endpoints return just the bare IP.
     assert "RTT:" in r.text
-    assert "Server:" in r.text
-    # DNSSEC + Resolver + Time deliberately absent from curl output.
+    # DNSSEC + Resolver + Time + Server + HTTP version deliberately
+    # absent from curl output (browser-only, or noise in scripts).
     assert "Resolver" not in r.text
     assert "DNSSEC" not in r.text
     assert "Time:" not in r.text
+    assert "Server:" not in r.text
+    assert "HTTP:" not in r.text
 
 
 def test_subdomain_detection_ignores_port(client: TestClient):
@@ -172,3 +174,36 @@ def test_responsive_header_uses_details_hamburger(client: TestClient):
     assert 'class="cptv-nav-toggle"' in body
     assert 'class="cptv-nav-menu"' in body
     assert 'aria-expanded="false"' in body
+
+
+def test_nav_hides_home_link_on_home(client: TestClient):
+    """The 'home' link is redundant when we ARE the home page."""
+    r = client.get(
+        "/",
+        headers={**FWD_V4, **BASE_DOMAIN, "Host": "example.test", "Accept": "text/html"},
+    )
+    body = r.text
+    # Pull just the nav menu so we don't false-match other 'href="/"' bits.
+    import re
+
+    m = re.search(r'<ul[^>]*id="cptv-nav-menu".*?</ul>', body, re.DOTALL)
+    assert m, "nav menu not found"
+    menu = m.group(0)
+    assert 'href="/"' not in menu
+    assert 'href="/help"' in menu
+
+
+def test_nav_hides_help_link_on_help(client: TestClient):
+    """The 'help' link is redundant when we ARE the help page."""
+    r = client.get(
+        "/help",
+        headers={**FWD_V4, **BASE_DOMAIN, "Host": "example.test", "Accept": "text/html"},
+    )
+    body = r.text
+    import re
+
+    m = re.search(r'<ul[^>]*id="cptv-nav-menu".*?</ul>', body, re.DOTALL)
+    assert m, "nav menu not found"
+    menu = m.group(0)
+    assert 'href="/help"' not in menu
+    assert 'href="/"' in menu

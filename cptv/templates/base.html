@@ -54,9 +54,12 @@
           aria-expanded="false"
           title="Open navigation"
         >☰</button>
+        {# Hide whichever of home / help points at the current page so the
+           nav stays focused on options the user can actually act on. #}
+        {% set _path = request.url.path if request else "/" %}
         <ul id="cptv-nav-menu" class="cptv-nav-menu">
-          <li><a href="/">home</a></li>
-          <li><a href="/help">help</a></li>
+          {% if _path != "/" %}<li><a href="/">home</a></li>{% endif %}
+          {% if _path != "/help" %}<li><a href="/help">help</a></li>{% endif %}
           <li>
             <button
               type="button"

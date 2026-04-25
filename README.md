@@ -192,12 +192,18 @@ Environment=CPTV_VALKEY_HOST=127.0.0.1
 Environment=CPTV_VALKEY_PORT=6379
 AutoUpdate=registry
 
-# Optional: a Quick Links section on the home page. Set on the
-# CONTAINER, not the pod \u2014 Quadlet does not propagate Environment=
-# from .pod files into the .container processes.
-# Single-line JSON array; the value of the env var must be quoted.
-Environment=CPTV_QUICK_LINKS_TITLE=Operator tools
-Environment=CPTV_QUICK_LINKS=[{"label":"Status page","url":"https://status.example.net","icon":"\ud83d\udfe2","description":"green = good"},{"label":"Internal wiki","url":"https://wiki.example.net","icon":"\ud83d\udcd6"},{"label":"Looking glass","url":"https://lg.example.net","icon":"\ud83d\udd2d"}]
+# Optional: a Quick Links section on the home page. CPTV_QUICK_LINKS is
+# JSON; embedding it inline as Environment=… requires escaping every "
+# (systemd's quoted-string parser eats unescaped ones), so the cleanest
+# pattern is to source it from a separate env file. EnvironmentFile=
+# below points at ~/.config/cptv/quick-links.env which contains:
+#
+#   CPTV_QUICK_LINKS_TITLE=Operator tools
+#   CPTV_QUICK_LINKS=[{"label":"Status page","url":"https://status.example.net","icon":"\ud83d\udfe2"},{"label":"Internal wiki","url":"https://wiki.example.net","icon":"\ud83d\udcd6"}]
+#
+# (one variable per line, no quoting needed — systemd reads env files
+# the same way Docker does, line-by-line VAR=value).
+EnvironmentFile=-%h/.config/cptv/quick-links.env
 
 [Install]
 WantedBy=default.target
@@ -205,14 +211,15 @@ WantedBy=default.target
 
 > **Quick Links live on the .container, not the .pod.** Quadlet
 > doesn't forward `[Pod]` `Environment=` lines into individual
-> container processes. If `CPTV_QUICK_LINKS` doesn't show up in the
-> rendered home page, double-check it sits on `cptv.container` and
-> reload the service:
+> container processes. After editing the env file:
 >
 > ```sh
 > systemctl --user restart cptv.service
 > curl -s http://cptv.example.com/?format=json | jq .quick_links
 > ```
+>
+> The leading `-` on `EnvironmentFile=-...` means "ignore if missing",
+> so the unit still starts when no Quick Links are configured.
 
 ### 2. Load and start the units
 
