@@ -18,7 +18,7 @@ podman run --rm -p 8000:8000 \
   ghcr.io/pdostal/cptv:latest
 ```
 
-The container expects [Valkey](https://valkey.io/) to be reachable for traceroute caching and rate limiting. A Podman-native deployment uses two Quadlet `.container` units (app + Valkey) on a shared internal network, fronted by nginx with Certbot handling TLS for `secure.<domain>`.
+The container expects [Valkey](https://valkey.io/) to be reachable for traceroute caching and rate limiting. A Podman-native deployment groups the app and Valkey containers in a shared **Pod** Quadlet so they reach each other on `localhost`, fronted by nginx with Certbot handling TLS for `secure.<domain>`.
 
 ### Required at deploy time
 
@@ -45,29 +45,48 @@ All behaviour is configurable via env vars — no hardcoded constants in code.
 
 ## Production deployment with Podman Quadlet
 
-The recommended production setup uses **systemd Quadlet** units to run the app and Valkey as rootless Podman containers, fronted by nginx with Certbot for TLS on `secure.<domain>`.
+The recommended production setup uses **systemd Quadlet** units to run the
+app and Valkey as rootless Podman containers grouped inside a single
+**Pod**. Pod members share a network namespace, so the app reaches
+Valkey at `127.0.0.1:6379` with no user-defined network and no
+container-name DNS to wire up. The pod is fronted by nginx with Certbot
+for TLS on `secure.<domain>`.
 
-### 1. Create a Podman network
+### 1. Quadlet unit files
 
-```sh
-podman network create cptv
+Place these files in `~/.config/containers/systemd/` (rootless) or
+`/etc/containers/systemd/` (rootful). Quadlet generates one systemd
+service per file.
+
+#### `cptv.pod`
+
+```ini
+[Unit]
+Description=cptv pod (app + valkey share localhost)
+After=network-online.target
+
+[Pod]
+PodName=cptv
+# Only the app port is published to the host loopback; nginx is the
+# only thing that talks to it. Valkey stays internal to the pod.
+PublishPort=127.0.0.1:8000:8000
+
+[Install]
+WantedBy=default.target
 ```
-
-### 2. Quadlet unit files
-
-Place these files in `~/.config/containers/systemd/` (rootless) or `/etc/containers/systemd/` (rootful).
 
 #### `cptv-valkey.container`
 
 ```ini
 [Unit]
 Description=Valkey cache for cptv
-After=network-online.target
+Requires=cptv-pod.service
+After=cptv-pod.service
 
 [Container]
 Image=docker.io/valkey/valkey:8-alpine
 ContainerName=cptv-valkey
-Network=cptv
+Pod=cptv.pod
 AutoUpdate=registry
 
 [Install]
@@ -79,16 +98,16 @@ WantedBy=default.target
 ```ini
 [Unit]
 Description=cptv network diagnostics
-After=cptv-valkey.service
-Requires=cptv-valkey.service
+Requires=cptv-pod.service cptv-valkey.service
+After=cptv-pod.service cptv-valkey.service
 
 [Container]
 Image=ghcr.io/pdostal/cptv:latest
 ContainerName=cptv
-Network=cptv
-PublishPort=127.0.0.1:8000:8000
+Pod=cptv.pod
 Volume=%h/.local/share/cptv/geolite2:/app/vendor/geolite2:ro,z
-Environment=CPTV_VALKEY_HOST=cptv-valkey
+# Pod members share the network namespace, so Valkey is on localhost.
+Environment=CPTV_VALKEY_HOST=127.0.0.1
 Environment=CPTV_VALKEY_PORT=6379
 AutoUpdate=registry
 
@@ -99,15 +118,15 @@ AutoUpdate=registry
 WantedBy=default.target
 ```
 
-### 3. Load and start the units
+### 2. Load and start the units
 
 ```sh
 systemctl --user daemon-reload
-systemctl --user start cptv-valkey.service cptv.service
-systemctl --user enable cptv-valkey.service cptv.service
+systemctl --user start cptv-pod.service cptv-valkey.service cptv.service
+systemctl --user enable cptv-pod.service cptv-valkey.service cptv.service
 ```
 
-### 4. Enable Podman auto-update
+### 3. Enable Podman auto-update
 
 Podman auto-update pulls newer images from the registry and restarts containers that have `AutoUpdate=registry` set.
 
