@@ -215,6 +215,34 @@ def test_curl_howto_card_no_longer_on_home(client: TestClient):
     assert 'id="curl-howto-section"' not in r.text
 
 
+def test_ip_card_no_protocol_annotation(client: TestClient):
+    """Public IP with no warnings should NOT show the (IPv4)/(IPv6) tag."""
+    r = client.get("/", headers={**V4, "Accept": "text/html"})
+    body = r.text
+    # Pull out the ip-section and check there's no '(IPv4)' or '(IPv6)' in it.
+    import re
+
+    m = re.search(r'id="ip-section".*?</article>', body, re.DOTALL)
+    assert m, "ip-section not found"
+    section = m.group(0)
+    assert "(IPv4)" not in section
+    assert "(IPv6)" not in section
+
+
+def test_ip_card_warns_on_private_ip(client: TestClient):
+    """RFC1918 private IPs still get the (private) annotation."""
+    r = client.get(
+        "/",
+        headers={"X-Forwarded-For": "192.168.1.1", "Accept": "text/html"},
+    )
+    body = r.text
+    import re
+
+    m = re.search(r'id="ip-section".*?</article>', body, re.DOTALL)
+    section = m.group(0)
+    assert "(private)" in section
+
+
 def test_aggregated_json_has_redirect_origin(client: TestClient):
     r = client.get("/", headers={**V4, "Accept": "application/json"})
     assert r.status_code == 200

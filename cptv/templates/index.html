@@ -35,10 +35,16 @@ http = data.http %} {% set quick_links = data.quick_links %}
   {% if ip.current %}
   <p>
     <code class="ip-current">{{ ip.current }}</code>
+    {# Drop the (IPv4)/(IPv6) protocol annotation \u2014 the address shape
+       already says it. Keep the parens only when at least one warning
+       (private RFC1918, CGNAT) needs surfacing. #}
+    {% if ip.is_private or ip.is_cgnat %}
     <small
-      >({{ ip.protocol }}{% if ip.is_private %}, private{% endif %}{% if
-      ip.is_cgnat %}, CGNAT ⚠️{% endif %})</small
+      >({% if ip.is_private %}private{% endif
+      %}{% if ip.is_private and ip.is_cgnat %}, {% endif
+      %}{% if ip.is_cgnat %}CGNAT ⚠️{% endif %})</small
     >
+    {% endif %}
   </p>
   {% else %}
   <p><code>unknown</code></p>
