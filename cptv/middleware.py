@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -7,6 +9,33 @@ from starlette.responses import Response
 from cptv.config import BASE_DOMAIN_HEADER, get_settings
 
 SUBDOMAIN_PREFIXES = ("ipv4", "ipv6")
+
+
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    """Stamps the request start time and exposes elapsed handling time.
+
+    ``request.state.request_started_at`` is set as early as possible.
+    Handlers can read it to populate ``timing.rtt_ms`` in their payload
+    before rendering. After the handler returns, the final elapsed value
+    is also written to the ``X-Response-Time-Ms`` response header for
+    observability.
+    """
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        start = time.perf_counter()
+        request.state.request_started_at = start
+        response: Response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        response.headers["X-Response-Time-Ms"] = f"{elapsed_ms:.1f}"
+        return response
+
+
+def elapsed_ms_so_far(request: Request) -> float | None:
+    """Return ms elapsed since the request entered the timing middleware."""
+    started = getattr(request.state, "request_started_at", None)
+    if started is None:
+        return None
+    return (time.perf_counter() - started) * 1000.0
 
 
 def detect_subdomain(host: str | None, base_domain: str) -> str | None:

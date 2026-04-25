@@ -130,6 +130,12 @@ http = data.http %} {% set quick_links = data.quick_links %}
       {{ timing.server_timestamp }}
     </time>
   </p>
+  {% if timing.rtt_ms is not none %}
+  <p>
+    Server handling time: <code>{{ timing.rtt_ms }}ms</code>
+    <small>(time spent on the server, excludes network)</small>
+  </p>
+  {% endif %}
   <p>HTTP version: <code>{{ http.version }}</code></p>
   <p id="clock-skew-warning" hidden>
     ⚠️ Your clock differs from the server by <span id="clock-skew-value">…</span>.

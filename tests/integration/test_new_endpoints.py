@@ -160,6 +160,21 @@ def test_more_alias(client: TestClient):
     assert "Server:" in r.text
 
 
+def test_aggregated_json_has_rtt_ms(client: TestClient):
+    r = client.get("/", headers={**V4, "Accept": "application/json"})
+    assert r.status_code == 200
+    rtt = r.json()["timing"]["rtt_ms"]
+    assert isinstance(rtt, (int, float))
+    assert rtt >= 0
+
+
+def test_response_time_header_present(client: TestClient):
+    r = client.get("/ip", headers=V4)
+    assert "X-Response-Time-Ms" in r.headers
+    val = float(r.headers["X-Response-Time-Ms"])
+    assert val >= 0
+
+
 def test_aggregated_with_quick_links(monkeypatch, client: TestClient):
     # Push CPTV_QUICK_LINKS into the cached settings by clearing the lru_cache.
     from cptv import config

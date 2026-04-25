@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from cptv.middleware import SubdomainMiddleware
+from cptv.middleware import RequestTimingMiddleware, SubdomainMiddleware
 from cptv.routes import asn as asn_routes
 from cptv.routes import dns as dns_routes
 from cptv.routes import geoip as geoip_routes
@@ -39,7 +39,9 @@ def create_app() -> FastAPI:
     )
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+    # Order: timing first (so it brackets everything), subdomain second.
     application.add_middleware(SubdomainMiddleware)
+    application.add_middleware(RequestTimingMiddleware)
     application.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     application.include_router(health_routes.router)

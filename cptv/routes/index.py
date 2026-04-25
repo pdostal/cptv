@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.templating import Jinja2Templates
 
 from cptv.config import get_base_domain, get_settings
+from cptv.middleware import elapsed_ms_so_far
 from cptv.negotiation import respond
 from cptv.services import asn as asn_service
 from cptv.services import clock as clock_service
@@ -33,6 +34,9 @@ def _collect(request: Request) -> dict:
 
     http_version = request.scope.get("http_version") or "1.1"
     forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+
+    elapsed = elapsed_ms_so_far(request)
+    rtt_ms = round(elapsed, 1) if elapsed is not None else None
 
     return {
         "ip": {
@@ -70,7 +74,7 @@ def _collect(request: Request) -> dict:
         "dnssec": None,  # client-side only (§4.5)
         "timing": {
             "server_timestamp": clock_service.iso_now(),
-            "rtt_ms": None,
+            "rtt_ms": rtt_ms,
         },
         "http": {
             "version": f"HTTP/{http_version}",
@@ -131,6 +135,9 @@ def _text_aggregated(data: dict) -> str:
     lines.append("")
 
     lines.append(f"⏱️  Time:      {data['timing']['server_timestamp']}")
+    rtt = data["timing"].get("rtt_ms")
+    if rtt is not None:
+        lines.append(f"   RTT:       {rtt}ms (server-side handling)")
     lines.append(f"   HTTP:      {http['version']}")
     lines.append(f"   Server:    {meta['server']}  ({meta['repo']})")
 
