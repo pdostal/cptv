@@ -193,6 +193,54 @@
     }
   }
 
+  // ---------- theme toggle (Pico data-theme) ----------
+  const THEME_KEY = "cptv:theme:v1";
+  const THEMES = ["auto", "light", "dark"];
+
+  function applyTheme(theme) {
+    const root = document.documentElement;
+    if (theme === "auto") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", theme);
+  }
+
+  function readTheme() {
+    try {
+      const stored = window.localStorage.getItem(THEME_KEY);
+      return THEMES.includes(stored) ? stored : "auto";
+    } catch {
+      return "auto";
+    }
+  }
+
+  function writeTheme(theme) {
+    try {
+      window.localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function wireThemeToggle() {
+    const btn = qs("#theme-toggle");
+    const label = qs("#theme-toggle-label");
+    if (!btn) return;
+
+    let current = readTheme();
+    applyTheme(current);
+    if (label) label.textContent = current;
+
+    on(btn, "click", () => {
+      const idx = THEMES.indexOf(current);
+      current = THEMES[(idx + 1) % THEMES.length];
+      applyTheme(current);
+      writeTheme(current);
+      if (label) label.textContent = current;
+    });
+  }
+
+  // Apply stored theme as early as possible to avoid a flash of light/dark.
+  applyTheme(readTheme());
+
   // ---------- traceroute SSE ----------
   // The server emits HTML fragments per event. We attach a raw EventSource
   // and place each event's payload into the right node by element id, so
@@ -437,5 +485,6 @@
     detectAnycastPop();
     detectResolver();
     wireTracerouteStream();
+    wireThemeToggle();
   });
 })();
