@@ -105,10 +105,15 @@
 
     const base = getBaseDomain();
 
+    // Protocol-relative URLs let the browser pick the page's scheme:
+    // http on the apex, https on secure.<domain>. Mixed-content
+    // blocking is avoided either way as long as ipv4./ipv6. answer
+    // both protocols (see README's nginx section).
     const probes = [
-      ["ipv4", `http://ipv4.${base}${port}/4?format=text`],
-      ["ipv6", `http://ipv6.${base}${port}/6?format=text`],
+      ["ipv4", `//ipv4.${base}${port}/4?format=text`],
+      ["ipv6", `//ipv6.${base}${port}/6?format=text`],
     ];
+    const scheme = window.location.protocol.replace(":", "");
     for (const [stack, url] of probes) {
       try {
         const resp = await fetch(url, { cache: "no-store" });
@@ -117,6 +122,10 @@
         if (!text) continue;
         const el = document.querySelector(`[data-ds="${stack}"]`);
         if (el) el.textContent = text;
+        // Tag the row with the actual scheme used so a curious user
+        // can see whether the probe used http or https. Tiny, inline.
+        const badge = document.querySelector(`[data-ds-via="${stack}"]`);
+        if (badge) badge.textContent = `via ${scheme}`;
       } catch {
         /* silent — dual-stack probe is best-effort */
       }

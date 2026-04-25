@@ -15,6 +15,13 @@
   color: var(--pico-color-blue-500, #0050b8);
 }
 
+/* Probe protocol badge next to dual-stack rows ("via http" / "via https"). */
+.cptv-probe-via {
+  margin-left: 0.4rem;
+  color: var(--pico-muted-color, #777);
+  font-style: italic;
+}
+
 /* IP addresses are long (especially IPv6); allow them to wrap mid-string
    so they never blow out the article width on phones. */
 code.ip-current,
