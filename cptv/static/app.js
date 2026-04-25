@@ -164,8 +164,13 @@
       img.src = url;
     };
     // Control: a validly-signed site. Bogus: rhybar.cz (CZ.NIC DNSSEC test).
+    // Both URLs are HTTPS so secure.<domain> doesn't trigger Mixed-Content
+    // upgrade notices. The DNSSEC test depends on whether the visitor's
+    // resolver returns the bogus A record at all, not on the TLS handshake,
+    // so the choice of scheme is harmless. www.rhybar.cz serves HTTPS with
+    // a valid certificate (HSTS + HTTP/2).
     probe(`https://www.iana.org/favicon.ico?t=${Date.now()}`, "control");
-    probe(`http://www.rhybar.cz/favicon.ico?t=${Date.now()}`, "bogus");
+    probe(`https://www.rhybar.cz/favicon.ico?t=${Date.now()}`, "bogus");
 
     // Don't hang forever.
     setTimeout(() => {
