@@ -351,30 +351,6 @@ http = data.http %} {% set quick_links = data.quick_links %}
   </details>
 </article>
 
-<article id="curl-howto-section">
-  <header><strong>💻 Use cptv from your terminal</strong></header>
-  <details>
-    <summary>Show curl examples</summary>
-    {% set d = data.meta.server %}
-    <pre style="white-space: pre-wrap"><code>curl {{ d }}                        # plain text aggregated
-curl {{ d }}/?format=json           # JSON for scripting
-curl ipv4.{{ d }}                   # bare IPv4, no decoration
-curl ipv6.{{ d }}                   # bare IPv6, no decoration
-MY_IP=$(curl -s ipv4.{{ d }})       # capture into a shell var
-curl {{ d }}/traceroute.txt         # blocking traceroute
-curl {{ d }}/asn?format=json        # one section as JSON
-curl -I {{ d }}/ip                  # see response headers
-</code></pre>
-    <p>
-      <small
-        >Plain-text endpoints add a one-line <code>?format=json</code>
-        hint at the end; the bare-IP endpoints don't, so they remain
-        clean for scripting.</small
-      >
-    </p>
-  </details>
-</article>
-
 {% if quick_links %}
 <article id="quick-links-section">
   <header><strong>🔗 {{ data.quick_links_title or "Quick Links" }}</strong></header>
