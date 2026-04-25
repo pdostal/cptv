@@ -142,6 +142,27 @@ http = data.http %} {% set quick_links = data.quick_links %}
   </p>
 </article>
 
+<article id="history-section">
+  <header><strong>📋 Session history</strong></header>
+  <p>
+    <small
+      >IPs seen across your visits, stored in your browser's
+      <code>localStorage</code> only — never sent to the server.</small
+    >
+  </p>
+  <ol id="ip-history">
+    <li><small>No history yet.</small></li>
+  </ol>
+  <p>
+    <button type="button" id="history-clear" class="secondary outline">
+      Clear history
+    </button>
+  </p>
+  <noscript>
+    <p><small>JavaScript required to record and display history.</small></p>
+  </noscript>
+</article>
+
 <article id="traceroute-section">
   <header><strong>🛰️ Traceroute</strong></header>
   <div

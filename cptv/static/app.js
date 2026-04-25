@@ -99,6 +99,110 @@
     }, 8000);
   }
 
+  // ---------- session history (localStorage, never sent to server) ----------
+  const HISTORY_KEY = "cptv:history:v1";
+
+  function readHistory() {
+    try {
+      const raw = window.localStorage.getItem(HISTORY_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function writeHistory(entries) {
+    try {
+      window.localStorage.setItem(HISTORY_KEY, JSON.stringify(entries));
+    } catch {
+      /* storage may be disabled or full — silently give up */
+    }
+  }
+
+  function recordSeen(ip, protocol) {
+    if (!ip || ip === "…" || ip === "—" || ip === "unknown") return null;
+    const now = new Date().toISOString();
+    const entries = readHistory();
+    const existing = entries.find((e) => e.ip === ip);
+    if (existing) {
+      existing.last_seen = now;
+      existing.count = (existing.count || 1) + 1;
+      if (protocol && !existing.protocol) existing.protocol = protocol;
+    } else {
+      entries.push({
+        ip,
+        protocol: protocol || null,
+        first_seen: now,
+        last_seen: now,
+        count: 1,
+      });
+    }
+    writeHistory(entries);
+    return entries;
+  }
+
+  function renderHistory() {
+    const list = qs("#ip-history");
+    if (!list) return;
+    const entries = readHistory();
+    list.innerHTML = "";
+    if (entries.length === 0) {
+      const empty = document.createElement("li");
+      empty.innerHTML = "<small>No history yet.</small>";
+      list.appendChild(empty);
+      return;
+    }
+    // Most recently seen first.
+    const sorted = [...entries].sort((a, b) =>
+      (b.last_seen || "").localeCompare(a.last_seen || ""),
+    );
+    for (const entry of sorted) {
+      const li = document.createElement("li");
+      const proto = entry.protocol ? ` (${entry.protocol})` : "";
+      const seenN = entry.count > 1 ? ` · seen ${entry.count}\u00d7` : "";
+      const last = entry.last_seen ? entry.last_seen.replace("T", " ").replace("Z", "Z") : "?";
+      li.innerHTML = `<code>${entry.ip}</code><small>${proto}${seenN} · last ${last}</small>`;
+      list.appendChild(li);
+    }
+  }
+
+  function wireHistoryClearButton() {
+    const btn = qs("#history-clear");
+    if (!btn) return;
+    on(btn, "click", () => {
+      try {
+        window.localStorage.removeItem(HISTORY_KEY);
+      } catch {
+        /* ignore */
+      }
+      renderHistory();
+    });
+  }
+
+  function trackHistory() {
+    // Pull current IP / protocol off the page (already rendered server-side).
+    const currentEl = qs(".ip-current");
+    const dualEl = qs("#dual-stack");
+    const currentIp = currentEl ? currentEl.textContent.trim() : null;
+    const protocol = dualEl ? dualEl.dataset.protocol || null : null;
+    if (currentIp) recordSeen(currentIp, protocol);
+
+    // Also record any other-stack IP discovered by the dual-stack probe.
+    // Re-render history when the probe updates the DOM.
+    renderHistory();
+    document.querySelectorAll("[data-ds]").forEach((el) => {
+      const observer = new MutationObserver(() => {
+        const stack = el.dataset.ds;
+        const ip = el.textContent.trim();
+        const proto = stack === "ipv4" ? "IPv4" : stack === "ipv6" ? "IPv6" : null;
+        if (recordSeen(ip, proto)) renderHistory();
+      });
+      observer.observe(el, { childList: true, characterData: true, subtree: true });
+    });
+  }
+
   // ---------- browser geolocation (opt-in) ----------
   function wireGeolocationButton() {
     const btn = qs("#request-geolocation");
@@ -124,5 +228,7 @@
     detectDualStack();
     checkDnssec();
     wireGeolocationButton();
+    trackHistory();
+    wireHistoryClearButton();
   });
 })();
