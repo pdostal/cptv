@@ -18,6 +18,23 @@ from cptv.services import redirect_origin as redirect_origin_service
 router = APIRouter()
 
 
+def _request_inspection(request: Request) -> dict:
+    """Snapshot of the request for the 'request inspection' panel.
+
+    No filtering: surface every header the browser sent so the panel
+    is genuinely useful for debugging captive portals, proxies, and
+    misconfigured nginx forwarding. The headers belong to the user's
+    own request; there is no privacy concern in showing them back.
+    """
+    return {
+        "method": request.method,
+        "path": request.url.path,
+        "scheme": request.url.scheme,
+        "client": request.client.host if request.client else None,
+        "headers": dict(request.headers),
+    }
+
+
 def _collect(request: Request) -> dict:
     address = ip_service.client_ip(request)
     classified = ip_service.classify(address) if address is not None else None
@@ -97,6 +114,7 @@ def _collect(request: Request) -> dict:
         },
         "quick_links": [link.model_dump() for link in get_settings().quick_links],
         "quick_links_title": get_settings().quick_links_title,
+        "request": _request_inspection(request),
     }
 
 
@@ -167,31 +185,6 @@ def _register(templates: Jinja2Templates) -> APIRouter:
             html_context={"data": data},
             json_data=data,
             text=_text_aggregated(data),
-        )
-
-    @router.get("/details")
-    @router.get("/more")
-    @router.get("/api/v1/details")
-    def details(request: Request) -> Response:
-        data = _collect(request)
-        data["request"] = {
-            "headers": {
-                k: v
-                for k, v in request.headers.items()
-                if k.lower() in {"accept", "accept-language", "host", "x-forwarded-proto"}
-            },
-            "client": request.client.host if request.client else None,
-            "method": request.method,
-            "path": request.url.path,
-        }
-        return respond(
-            request,
-            templates=templates,
-            html_template="details.html",
-            html_context={"data": data},
-            json_data=data,
-            text=_text_aggregated(data)
-            + "\n\n(see /api/v1/details for JSON with extended request fields)",
         )
 
     return router

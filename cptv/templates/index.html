@@ -287,6 +287,60 @@ http = data.http %} {% set quick_links = data.quick_links %}
   </div>
 </article>
 
+{# Request inspection panel — collapsed by default. Replaces the old
+   /details page; shows everything the server sees about this request
+   plus a curated list of headers cptv sends back. #}
+<article id="request-section">
+  <header><strong>📋 Request inspection</strong></header>
+  {% set req = data.request %}
+  <details>
+    <summary>Headers seen by the server</summary>
+    <ul>
+      <li>Method: <code>{{ req.method }}</code></li>
+      <li>Path: <code>{{ req.path }}</code></li>
+      <li>Scheme: <code>{{ req.scheme }}</code></li>
+      <li>Direct client (pre-proxy): <code>{{ req.client or "—" }}</code></li>
+      <li>Forwarded proto: <code>{{ data.http.protocol }}</code></li>
+      {% if data.http.referrer %}
+      <li>Referrer: <code>{{ data.http.referrer }}</code></li>
+      {% endif %}
+    </ul>
+    <pre style="white-space: pre-wrap; overflow-wrap: anywhere"
+      >{% for k, v in req.headers.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre
+    >
+  </details>
+  <details>
+    <summary>Response headers cptv sends back</summary>
+    <ul>
+      <li>
+        <code>X-Response-Time-Ms</code> — server-side handling time
+      </li>
+      <li>
+        <code>Access-Control-Allow-Origin: *</code> — set on
+        <code>/ip</code>, <code>/ipv4</code>, <code>/ipv6</code> and
+        their aliases so the browser dual-stack probe can read them
+      </li>
+      <li>
+        <code>X-Traceroute-Cached</code> /
+        <code>X-Traceroute-Cache-Age</code> /
+        <code>X-Traceroute-Refreshes-In</code> — set on every
+        <code>/traceroute*</code> response
+      </li>
+      <li>
+        <code>Cache-Control: no-store</code> — set on the IP echo
+        endpoints so dual-stack results are always fresh
+      </li>
+    </ul>
+    <p>
+      <small
+        >Inspect them yourself with
+        <code>curl -I {{ data.meta.server }}/ip</code>.</small
+      >
+    </p>
+  </details>
+</article>
+
 {% if quick_links %}
 <article id="quick-links-section">
   <header><strong>🔗 {{ data.quick_links_title or "Quick Links" }}</strong></header>

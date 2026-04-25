@@ -613,9 +613,13 @@ Always returns plain text regardless of `Accept` header.
 
 ---
 
-### 5.12 `GET /details` · `GET /more` · `GET /api/v1/details`
+### 5.12 ~~`GET /details`~~ — removed
 
-Extended verbose output — all fields plus additional technical detail. Plain text by default when curled, full HTML page in browser.
+The dedicated `/details`, `/more`, and `/api/v1/details` endpoints were
+removed in v0.1.4. Their content (a "request inspection" panel showing
+the headers the server sees and the response headers cptv emits) is now
+collapsed-by-default on the home page itself, both in the HTML view and
+under the `request` key in the aggregated JSON response.
 
 ---
 
