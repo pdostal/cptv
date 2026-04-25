@@ -163,9 +163,58 @@ class TestRunMtr:
 
         with (
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-            pytest.raises(TracerouteError, match="exited 1"),
+            pytest.raises(TracerouteError, match="permission denied"),
         ):
             await run_mtr(ipaddress.ip_address("8.8.8.8"))
+
+    @pytest.mark.asyncio
+    async def test_mtr_unreachable_translates_cleanly(self):
+        """Network is unreachable becomes TracerouteUnreachableError."""
+        from cptv.services.traceroute import TracerouteUnreachableError
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 1
+        mock_proc.communicate = AsyncMock(
+            return_value=(b"", b"mtr: udp socket connect failed: Network is unreachable")
+        )
+
+        with (
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+            pytest.raises(TracerouteUnreachableError, match="no IPv6 route"),
+        ):
+            await run_mtr(ipaddress.ip_address("2001:db8::1"))
+
+    @pytest.mark.asyncio
+    async def test_mtr_passes_family_flag(self):
+        """The -4 / -6 flag is appended so mtr commits to one family."""
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(json.dumps(SAMPLE_MTR_JSON).encode(), b""))
+
+        captured: list[str] = []
+
+        async def capture(*args, **_kwargs):
+            captured.extend(args)
+            return mock_proc
+
+        with (
+            patch("asyncio.create_subprocess_exec", side_effect=capture),
+            patch("cptv.services.traceroute._reverse_dns", return_value=None),
+            patch("cptv.services.traceroute.asn_service.lookup", return_value=None),
+        ):
+            await run_mtr(ipaddress.ip_address("203.0.113.42"))
+        assert "-4" in captured
+        assert "-6" not in captured
+
+        captured.clear()
+        with (
+            patch("asyncio.create_subprocess_exec", side_effect=capture),
+            patch("cptv.services.traceroute._reverse_dns", return_value=None),
+            patch("cptv.services.traceroute.asn_service.lookup", return_value=None),
+        ):
+            await run_mtr(ipaddress.ip_address("2001:db8::1"))
+        assert "-6" in captured
+        assert "-4" not in captured
 
     @pytest.mark.asyncio
     async def test_mtr_invalid_json(self):

@@ -12,6 +12,7 @@ from cptv.services.traceroute import (
     TracerouteBusyError,
     TracerouteError,
     TracerouteRateLimitedError,
+    TracerouteUnreachableError,
     format_json,
     format_text,
     run_mtr_cached,
@@ -73,6 +74,10 @@ def _register(templates: Jinja2Templates) -> APIRouter:
                 "Server is running too many traceroutes right now. Please try again shortly.",
                 status_code=503,
             )
+        except TracerouteUnreachableError as exc:
+            # The host has no route to this IP family. Common on /64-only
+            # rootless pods that don't pass IPv6 through to the container.
+            return _error_response(request, templates, str(exc))
         except TracerouteError:
             log.exception("traceroute failed for %s", address)
             return _error_response(
