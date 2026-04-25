@@ -79,7 +79,9 @@ proxy_set_header X-Forwarded-Proto $scheme;
 | DNSSEC validation                                          |                    | ✓ JS `<img>` tag → `rhybar.cz`           |
 | Clock skew                                                 | provides timestamp | ✓ JS compares to `Date.now()`            |
 | Browser geolocation                                        |                    | ✓ JS, explicit opt-in                    |
-| Anycast PoP detection                                      |                    | ✓ JS DoH fetch (future issue)            |
+| Anycast PoP detection                                      |                    | ✓ JS fetch to Cloudflare /cdn-cgi/trace  |
+| Resolver whoami probe                                      |                    | ✓ JS DoH query to o-o.myaddr.l.google.com|
+| Captive portal redirect origin                             | header inspection  | banner shown when heuristic fires        |
 
 ### 4.1 IP Address Information 🌐
 
@@ -134,9 +136,14 @@ References:
 
 ### 4.6 Traceroute / MTR 🛰️
 
-Runs `mtr --json --report --no-dns --mpls -c 5 <client-ip>` as a background task, streamed live to the browser via **Server-Sent Events** (`/traceroute/stream`, consumed with the `htmx-ext-sse` extension). The blocking endpoint at `/traceroute` is preserved for JSON / plain-text consumers and the no-JS fallback.
+Two execution paths share the same enrichment + caching layer:
 
-The `--no-dns` flag is important: DNS resolution of hop names is performed **by the application after mtr completes** — not by mtr itself. This gives full control over per-hop enrichment (rDNS, ASN, MPLS labels) and lets us cache enriched results.
+- **Blocking** at `/traceroute` (and `/traceroute.json`, `/traceroute.txt`) runs `mtr --json --report --no-dns --mpls -c 5 <client-ip>`, parses the final JSON, enriches each hop with rDNS + ASN + MPLS labels, and returns the full result. JSON / text / no-JS clients consume this.
+- **Live streaming** at `/traceroute/stream` runs `mtr --raw --no-dns --mpls -c 5 <client-ip>` and parses its split-format line protocol (`h <pos> <ip>`, `x <pos> <seq>`, `p <pos> <usec> <seq>`, `m <pos> <label> <tc> <s> <ttl>`) hop-by-hop. Each new measurement triggers a Server-Sent Event with an updated `<tr>` for that hop, which the browser swaps into the table by id. The HTML home page consumes this with a small `EventSource` handler in `app.js`.
+
+Both paths use a process-wide `asyncio.Semaphore` (cap configurable via `CPTV_TRACEROUTE_MAX_CONCURRENCY`, default 4; wait window via `CPTV_TRACEROUTE_CONCURRENCY_WAIT_SECONDS`, default 2.0s) so a sudden surge from many distinct client IPs cannot saturate the host.
+
+The `--no-dns` flag is important: DNS resolution of hop names is performed **by the application after each hop reply** — not by mtr itself. This gives full control over per-hop enrichment (rDNS, ASN, MPLS labels) and lets us cache enriched results.
 
 #### Per-hop data displayed
 
@@ -196,8 +203,14 @@ Quadlet unit does **not** need `AddCapability=CAP_NET_RAW`. UDP mode does not el
 
 ### 4.8 Referrer / Redirect Origin 🔀
 
-- Captive portal redirect origin displayed if detected
-- Inspects `Referer`, `X-Original-URL`, and related headers
+- Captive portal redirect origin displayed when detected
+- `cptv.services.redirect_origin` inspects `Referer`, `X-Original-URL`,
+  `X-Original-Host`, `X-Forwarded-Host`, `X-Original-URI`, and `X-Rewrite-URL`
+- Self-referrers (Referer host matches the base domain or any subdomain of
+  it) are ignored so internal navigation does not trigger the warning
+- When triggered, the home page renders a yellow ⚠️ "Captive portal detected"
+  card with the referrer host and the original URL the visitor was trying to
+  reach
 
 ### 4.9 Session History 📋
 
@@ -214,7 +227,9 @@ Quadlet unit does **not** need `AddCapability=CAP_NET_RAW`. UDP mode does not el
 ### 4.11 Dark / Light Theme 🌙
 
 - Automatic via Pico CSS `prefers-color-scheme` — no JS required
-- Optional manual toggle as JS progressive enhancement
+- 3-state manual toggle (auto → light → dark) in the navigation bar; choice
+  persists in `localStorage` under the key `cptv:theme:v1` and is applied
+  before the first paint to avoid a flash of incorrect theme
 
 ### 4.12 Quick Links 🔗
 
@@ -246,14 +261,20 @@ CPTV_QUICK_LINKS='[
 - If `CPTV_QUICK_LINKS` is unset or an empty array, the **entire section is hidden** — no empty box, no placeholder
 - If the JSON is malformed, the app logs a warning at startup and hides the section rather than crashing
 - Links open in a new tab (`target="_blank"` with `rel="noopener noreferrer"`)
-- Section title defaults to **"Quick Links"** — not currently configurable (future issue if needed)
+- Section title defaults to **"Quick Links"** and is configurable via
+  `CPTV_QUICK_LINKS_TITLE` (also surfaced in the JSON aggregated response
+  under `quick_links_title`)
 - Quick links are included in the `/api/v1/` JSON response under a `quick_links` key, and omitted entirely when the list is empty
 - Quick links are **not** shown in plain-text curl output (not relevant for scripting)
 
 ### 4.13 Animations
 
-- Subtle CSS-only animations (fade-in on load, pulse on live traceroute)
-- Must not interfere with readability or accessibility
+- Subtle CSS-only animations:
+  - 0.3s opacity fade-in with a 40-ms stagger on home page cards
+  - Slow opacity pulse on the traceroute status banner while a live trace
+    is in progress (toggled via the `is-running` class)
+  - Short row-flash on each hop the moment its measurements update
+- All animations honour `prefers-reduced-motion: reduce` and switch off
 
 ---
 
@@ -832,15 +853,18 @@ cptv/                         # https://github.com/pdostal/cptv
 │   │   ├── asn.py            # ASN lookups + looking glass URL generation
 │   │   ├── dns.py            # Resolver IP detection
 │   │   ├── traceroute.py     # mtr wrapper, per-hop enrichment (rDNS + ASN + MPLS),
-│   │   │                     # Valkey cache/rate limit, SSE streaming generator
+│   │   │                     # Valkey cache/rate limit, SSE streaming generator,
+│   │   │                     # process-wide concurrency semaphore
 │   │   ├── valkey.py         # Valkey connection manager (uses redis-py client)
+│   │   ├── redirect_origin.py # Captive-portal heuristic from headers
 │   │   └── clock.py          # Server timestamp for client clock skew check
 │   ├── templates/            # Jinja2 HTML templates (incl. _hop_row.html partial for SSE)
 │   ├── middleware.py         # SubdomainMiddleware + RequestTimingMiddleware
 │   └── static/
-│       ├── app.js            # App-authored progressive enhancements (history, dnssec probe, …)
-│       ├── app.css           # App-authored CSS
-│       └── vendor/           # Built by npm (gitignored): pico.min.css, htmx.min.js, htmx-ext-sse.min.js
+│       ├── app.js            # Clock skew, dual-stack, DNSSEC, anycast PoP,
+│       │                     # resolver whoami, history, theme toggle, SSE consumer
+│       ├── app.css           # App-authored CSS incl. animations
+│       └── vendor/           # Built by npm (gitignored): pico.min.css, htmx.min.js
 ├── tests/
 │   ├── unit/                 # Per-service unit tests
 │   └── integration/          # Endpoint integration tests
@@ -882,14 +906,20 @@ All configuration examples live in `README.md`. No standalone config files commi
 
 ## 12. Open Issues (to be filed on GitHub)
 
-| #   | Topic                                                                                  |
-| --- | -------------------------------------------------------------------------------------- |
-| 1   | Clock skew UX — warning banner design and dismissal behaviour                          |
-| 2   | Traceroute abuse protection — global concurrency cap beyond Valkey per-key rate limit  |
-| 3   | Anycast PoP detection — client-side JS DoH fetch to 1.1.1.1/8.8.8.8                    |
-| 4   | Quick links — configurable section title via `CPTV_QUICK_LINKS_TITLE` env var          |
-| 5   | True hop-by-hop streaming via `mtr-packet` line protocol (current SSE buffers per run) |
-| 6   | Server-side resolver detection via DNS-side probe subdomain → authoritative logs       |
+The original list (clock-skew UX, global concurrency cap, anycast PoP,
+configurable Quick Links title, hop-by-hop streaming, resolver whoami,
+theme toggle, captive portal banner, animations) has been delivered and is
+documented in §4. Future items will be tracked directly on GitHub.
+
+Speculative future work that's intentionally out of scope today:
+
+- Operator-run DNS authoritative subdomain that records resolver IPs from
+  `<token>.dns-probe.<domain>` queries, cross-referenced with an HTTP probe
+  to identify the visitor's actual recursive resolver server-side. Today
+  the same need is met client-side via the Google DoH whoami probe.
+- HTTP/3 (QUIC) version detection and badge.
+- IPv6 reverse DNS using PTR records below the `/64` to surface
+  RFC-formatted prefix delegation hints.
 
 ---
 
@@ -909,6 +939,10 @@ This statement is displayed at the bottom of every HTML page and included in the
 - **Connection history** (IPv4/IPv6 addresses from previous visits, with first/last seen timestamps) is stored exclusively in **your browser's `localStorage`** under the key `cptv:history:v1` — it never leaves your device and is never sent to the server. A **Clear history** button on the home page wipes it.
 - **Geolocation** (if you opt in via the "Show my real location" button) is used only to display your position on the map in your browser — the coordinates are never transmitted to the server
 - **DNSSEC test** results are determined entirely client-side by your browser loading an image — no result is reported back to the server
+- **Anycast PoP probe** to `https://1.1.1.1/cdn-cgi/trace` happens directly from your browser — the response is parsed in JavaScript and never seen by us
+- **Resolver whoami probe** to `https://dns.google/resolve?name=o-o.myaddr.l.google.com` happens directly from your browser — the answer is rendered in your DOM and never seen by us
+- **Theme preference** (auto / light / dark) is stored in `localStorage` under `cptv:theme:v1`
+- **Clock-skew dismissal** is stored in `localStorage` under `cptv:clock-skew-dismissed:v1` so the same warning doesn't keep nagging across visits
 
 ### In plain English
 

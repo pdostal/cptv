@@ -4,28 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-**Feature-complete against `PLAN.md`.** Read-only diagnostic endpoints, traceroute with Valkey caching, live SSE streaming, server-measured RTT, and client-side session history are all wired up. `PLAN.md` remains the authoritative specification.
+**Feature-complete against `PLAN.md` including the §12 nice-to-haves.** Read-only diagnostic endpoints, traceroute with Valkey caching, true hop-by-hop SSE streaming, server-measured RTT, captive-portal detection, anycast PoP + resolver probes, theme toggle, and animations are all wired up. `PLAN.md` remains the authoritative specification.
 
 What currently exists:
 
 - `cptv/` package: `main.py`, `config.py`, `negotiation.py`, `middleware.py` (subdomain rewriting + request timing).
-- Services: `ip`, `geoip` (GeoLite2 City), `asn` (GeoLite2 ASN), `dns` (known-resolver classifier), `clock`, `traceroute` (mtr wrapper + Valkey cache/rate-limit + SSE streaming generator), `valkey` (connection manager).
+- Services: `ip`, `geoip` (GeoLite2 City), `asn` (GeoLite2 ASN), `dns` (known-resolver classifier), `clock`, `traceroute` (mtr wrapper + Valkey cache/rate-limit + live SSE streaming generator + process-wide concurrency semaphore), `valkey` (connection manager), `redirect_origin` (captive-portal heuristic).
 - Routes: `/`, `/api/v1/`, `/ip`, `/ipv4` + aliases, `/ipv6` + aliases, `/geoip`, `/asn`, `/isp`, `/dns`, `/traceroute` + `.json`/`.txt`, `/traceroute/stream` (SSE), `/help`, `/details` + `/more`, `/health`, plus all `api/v1/` variants.
-- Templates: `base.html` (Pico CSS + HTMX + htmx-ext-sse), rich `index.html` with IP / GeoIP / ASN / DNS / timing / session-history / traceroute / quick-links sections, `details.html`, `help.html`, `traceroute.html`, `section_stub.html`, `_hop_row.html` (SSE row partial).
-- Static assets: `cptv/static/app.js` (clock-skew, dual-stack probe, DNSSEC probe via `rhybar.cz`, localStorage session history, browser geolocation), `app.css`.
-- `pyproject.toml` with ruff + bandit configured, `uv.lock`, `geoip2` + `redis[hiredis]` deps.
-- `package.json` with HTMX + htmx-ext-sse + Pico CSS + ESLint (+ `eslint-plugin-security`), flat `eslint.config.js`.
+- Templates: `base.html` (Pico CSS + HTMX + theme toggle), `index.html` with conditional captive-portal banner, IP / GeoIP / ASN / anycast / DNS+resolver / timing / session-history / traceroute / quick-links sections, `details.html`, `help.html`, `traceroute.html`, `section_stub.html`, `_hop_row.html` (per-hop SSE partial).
+- Static assets: `cptv/static/app.js` (clock-skew with dismissible banner, dual-stack probe, DNSSEC via `rhybar.cz`, localStorage session history, browser geolocation, anycast PoP via Cloudflare /cdn-cgi/trace, resolver whoami via Google DoH, raw-EventSource consumer for traceroute SSE, theme toggle), `app.css` (animations honouring `prefers-reduced-motion`).
+- `pyproject.toml` with ruff + bandit configured, `uv.lock`, `geoip2` + `redis[hiredis]` deps; `CPTV_*` env vars include traceroute concurrency + quick-links title.
+- `package.json` with HTMX + Pico CSS + ESLint (+ `eslint-plugin-security`), flat `eslint.config.js`.
 - `Containerfile` (multi-stage: npm asset build -> uv sync -> runtime with `mtr-tiny` + `cap_net_raw`).
 - `scripts/download-geolite2.sh`, `scripts/build-assets.mjs`.
 - `.github/workflows/`: `lint.yml`, `test.yml` (pytest with Valkey service container + Lighthouse CI), `security.yml` (pip-audit, npm audit, bandit, eslint-security, trivy), `scorecard.yml`, `release.yml`.
 - `.github/dependabot.yml` for pip / npm / GitHub Actions / docker.
-- 119 tests passing: unit tests per service (incl. `stream_mtr_cached`), integration tests for every endpoint / content-negotiation combination, traceroute cache/rate-limit + SSE event tests.
+- 129 tests passing: unit tests per service (incl. `stream_mtr_live`, `stream_mtr_cached`, concurrency cap), integration tests for every endpoint / content-negotiation combination, captive-portal heuristic, traceroute cache/rate-limit + SSE event tests.
 
-What's still pending (see `PLAN.md` §12):
+What is **intentionally** still out of scope (PLAN.md §12):
 
-- **Real DNS-side resolver detection** — current `/dns` only classifies a resolver IP when passed as `?resolver=`; true server-side detection needs a DNS-probe host (unique subdomain -> authoritative logs). Out of scope for the web app alone.
-- **True hop-by-hop live streaming** — the SSE stream currently runs `mtr` to completion then replays hops; switching to the `mtr-packet` line protocol would let the UI show each hop as it is probed.
-- **Anycast PoP detection, configurable quick-links title, global concurrency cap** — minor enhancements.
+- An operator-run DNS authoritative zone for true server-side resolver detection. Today the web app uses Google's `o-o.myaddr.l.google.com` DoH whoami probe client-side instead; that satisfies the visible UX requirement without extra deployment infrastructure.
+- HTTP/3 (QUIC) detection / badge.
+- Reverse DNS hinting for IPv6 prefix delegations.
 
 ## Pre-commit checks
 
