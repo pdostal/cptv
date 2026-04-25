@@ -179,7 +179,12 @@ http = data.http %} {% set quick_links = data.quick_links %}
     </p>
   </noscript>
   <p>
-    <span id="dnssec-status" aria-live="polite">⚪ checking…</span>
+    <span
+      id="dnssec-status"
+      class="cptv-dnssec-pending"
+      aria-live="polite"
+      >⚪ validating…</span
+    >
   </p>
   <noscript
     ><small>DNSSEC validation check requires JavaScript.</small></noscript

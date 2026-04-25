@@ -37,7 +37,7 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="cptv",
         description="CaPTiVe — self-hosted network diagnostics. See PLAN.md.",
-        version="0.1.10",
+        version="0.1.11",
         lifespan=lifespan,
     )
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))

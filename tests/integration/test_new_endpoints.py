@@ -276,6 +276,23 @@ def test_dnssec_badge_text_in_javascript_mentions_rhybar(client: TestClient):
     assert "bogus rhybar.cz record rejected" in js
 
 
+def test_dnssec_badge_starts_pending_and_flashes(client: TestClient):
+    """Initial badge text is 'validating\u2026' and carries the pending class
+    so the CSS pulse animation kicks in before JS even runs."""
+    r = client.get("/", headers={**V4, "Accept": "text/html"})
+    body = r.text
+    assert 'class="cptv-dnssec-pending"' in body
+    assert "validating\u2026" in body
+
+
+def test_dnssec_timeout_bumped_to_30_seconds(client: TestClient):
+    """The DNSSEC probe waits up to 30 s for slow validating resolvers."""
+    from pathlib import Path
+
+    js = Path("cptv/static/app.js").read_text(encoding="utf-8")
+    assert "DNSSEC_TIMEOUT_MS = 30000" in js
+
+
 def test_ip_card_warns_on_private_ip(client: TestClient):
     """RFC1918 private IPs still get the (private) annotation."""
     r = client.get(
