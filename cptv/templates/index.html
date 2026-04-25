@@ -231,27 +231,53 @@ http = data.http %} {% set quick_links = data.quick_links %}
 
 <article id="traceroute-section">
   <header><strong>🛰️ Traceroute</strong></header>
-  <div id="traceroute-card" data-stream-url="/traceroute/stream">
-    <div id="traceroute-status">
-      <p><small>Connecting…</small></p>
+  <div id="traceroute-card">
+    {# Tabs for IPv4 / IPv6. The wireTraceroute() handler in app.js
+       hides whichever stack the dual-stack probe didn't see. #}
+    <fieldset
+      role="radiogroup"
+      aria-label="Choose traceroute stack"
+      class="cptv-trace-tabs"
+    >
+      <label hidden id="trace-tab-ipv4-label">
+        <input type="radio" name="trace-stack" value="ipv4" />
+        <span>IPv4</span>
+      </label>
+      <label hidden id="trace-tab-ipv6-label">
+        <input type="radio" name="trace-stack" value="ipv6" />
+        <span>IPv6</span>
+      </label>
+    </fieldset>
+
+    {% for stack in ["ipv4", "ipv6"] %}
+    <div
+      class="cptv-trace-pane"
+      data-trace-stack="{{ stack }}"
+      hidden
+    >
+      <div class="cptv-trace-status">
+        <p><small>Waiting…</small></p>
+      </div>
+      <figure>
+        <table role="grid">
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">IP</th>
+              <th scope="col">Hostname</th>
+              <th scope="col">ASN</th>
+              <th scope="col">Loss</th>
+              <th scope="col">Avg</th>
+              <th scope="col">Best</th>
+              <th scope="col">Worst</th>
+            </tr>
+          </thead>
+          <tbody class="cptv-trace-hops"></tbody>
+        </table>
+      </figure>
     </div>
-    <figure>
-      <table role="grid">
-        <thead>
-          <tr>
-            <th scope="col">#</th>
-            <th scope="col">IP</th>
-            <th scope="col">Hostname</th>
-            <th scope="col">ASN</th>
-            <th scope="col">Loss</th>
-            <th scope="col">Avg</th>
-            <th scope="col">Best</th>
-            <th scope="col">Worst</th>
-          </tr>
-        </thead>
-        <tbody id="traceroute-hops"></tbody>
-      </table>
-    </figure>
+    {% endfor %}
+
     <noscript>
       <p>
         JavaScript-disabled visitors:
