@@ -48,6 +48,8 @@ def _register(templates: Jinja2Templates) -> APIRouter:
     @router.get("/traceroute.json")
     @router.get("/traceroute.txt")
     @router.get("/api/v1/traceroute")
+    @router.get("/api/v1/traceroute.json")
+    @router.get("/api/v1/traceroute.txt")
     async def traceroute(request: Request) -> Response:
         address = ip_service.client_ip(request)
         if address is None:

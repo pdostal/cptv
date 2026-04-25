@@ -136,6 +136,23 @@ http = data.http %} {% set quick_links = data.quick_links %}
   </p>
 </article>
 
+<article id="traceroute-section">
+  <header><strong>🛰️ Traceroute</strong></header>
+  <div
+    id="traceroute-card"
+    hx-get="/traceroute"
+    hx-trigger="load delay:300ms"
+    hx-swap="innerHTML"
+  >
+    <p><small>Loading traceroute…</small></p>
+    <noscript>
+      <p>
+        <a href="/traceroute">Run traceroute to your IP →</a>
+      </p>
+    </noscript>
+  </div>
+</article>
+
 {% if quick_links %}
 <article id="quick-links-section">
   <header><strong>🔗 Quick Links</strong></header>

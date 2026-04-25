@@ -149,6 +149,25 @@ class TestTracerouteText:
         assert "AS1234" in r.text
 
 
+class TestTracerouteApiV1Suffixed:
+    def test_api_v1_json_suffix(self, client: TestClient):
+        with _patch_mtr():
+            r = client.get("/api/v1/traceroute.json", headers=V4)
+        assert r.status_code == 200
+        assert "application/json" in r.headers["content-type"]
+        data = r.json()
+        assert data["target"] == "203.0.113.42"
+        assert len(data["hops"]) == 3
+        assert r.headers["X-Traceroute-Cached"] == "false"
+
+    def test_api_v1_txt_suffix(self, client: TestClient):
+        with _patch_mtr():
+            r = client.get("/api/v1/traceroute.txt", headers=V4)
+        assert r.status_code == 200
+        assert "text/plain" in r.headers["content-type"]
+        assert "203.0.113.42" in r.text
+
+
 class TestTracerouteErrors:
     def test_mtr_failure(self, client: TestClient):
         with _patch_mtr_error():
