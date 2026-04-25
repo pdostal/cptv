@@ -117,30 +117,41 @@
    by default; that looks out of place inside the diagnostic cards.
    Restyle them as plain blue underlined links so they read as inline
    actions. The :not() guard excludes the navigation hamburger summary,
-   which has its own button-like styling. */
-summary:not(.cptv-nav-toggle),
+   which has its own button-like styling.
+
+   Specificity matters here: Pico ships
+   `details summary:not([role])` at (0,2,1) which sets summary color to
+   the body text colour. We match that specificity with
+   `details summary:not(.cptv-nav-toggle)` so app.css (loaded after
+   pico.min.css) wins on cascade order. */
+details summary:not(.cptv-nav-toggle),
 #request-geolocation,
 #history-clear {
   color: var(--pico-primary, #0a4f9c);
   text-decoration: underline;
+  text-decoration-color: var(--pico-primary, #0a4f9c);
   text-underline-offset: 0.15em;
   cursor: pointer;
   background: transparent;
   border: 0;
   padding: 0;
   font: inherit;
-  display: inline;
 }
-summary:not(.cptv-nav-toggle):hover,
+details summary:not(.cptv-nav-toggle):hover,
 #request-geolocation:hover,
 #history-clear:hover {
   text-decoration-thickness: 2px;
 }
-summary:not(.cptv-nav-toggle) {
+details summary:not(.cptv-nav-toggle) {
   /* Drop the default disclosure marker; the underlined text is enough. */
   list-style: none;
 }
-summary:not(.cptv-nav-toggle)::-webkit-details-marker {
+details summary:not(.cptv-nav-toggle)::-webkit-details-marker {
+  display: none;
+}
+/* Pico's `details summary::after` adds a chevron via background-image.
+   On these inline link-summaries it just adds noise; hide it. */
+details summary:not(.cptv-nav-toggle)::after {
   display: none;
 }
 
