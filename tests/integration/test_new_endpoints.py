@@ -269,9 +269,7 @@ def test_dnssec_label_and_badge_share_one_line(client: TestClient):
     body = r.text
     import re
 
-    m = re.search(
-        r'<p[^>]*class="cptv-dnssec-row".*?</p>', body, re.DOTALL
-    )
+    m = re.search(r'<p[^>]*class="cptv-dnssec-row".*?</p>', body, re.DOTALL)
     assert m, "cptv-dnssec-row not found"
     row = m.group(0)
     assert "cptv-dnssec-toggle" in row
