@@ -15,6 +15,37 @@
   color: var(--pico-color-blue-500, #0050b8);
 }
 
+/* The <details> summary lines, the geolocation request button, and the
+   history clear button are all "click here to do a thing" controls.
+   Pico styles <button> as a chunky filled button by default; that looks
+   out of place inside the diagnostic cards. Restyle them as plain blue
+   underlined links so they read as inline actions. */
+summary,
+#request-geolocation,
+#history-clear {
+  color: var(--pico-primary, #0a4f9c);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  display: inline;
+}
+summary:hover,
+#request-geolocation:hover,
+#history-clear:hover {
+  text-decoration-thickness: 2px;
+}
+summary {
+  /* Drop the default disclosure marker; the underlined text is enough. */
+  list-style: none;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+
 /* Probe protocol badge next to dual-stack rows ("via http" / "via https"). */
 .cptv-probe-via {
   margin-left: 0.4rem;
