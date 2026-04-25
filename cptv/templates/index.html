@@ -315,7 +315,7 @@ http = data.http %} {% set quick_links = data.quick_links %}
       <li>Referrer: <code>{{ data.http.referrer }}</code></li>
       {% endif %}
     </ul>
-    <pre style="white-space: pre-wrap; overflow-wrap: anywhere"
+    <pre class="cptv-headers-dump"
       >{% for k, v in req.headers.items() %}{{ k }}: {{ v }}
 {% endfor %}</pre
     >
