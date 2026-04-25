@@ -22,7 +22,7 @@ def test_ipv4_subdomain_rewrites_root_to_ipv4(client: TestClient):
         headers=_curl(FWD_V4, BASE_DOMAIN, {"Host": "ipv4.example.test"}),
     )
     assert r.status_code == 200
-    assert r.text == "203.0.113.42"
+    assert r.text.rstrip("\n") == "203.0.113.42"
 
 
 def test_ipv6_subdomain_rewrites_root_to_ipv6(client: TestClient):
@@ -31,7 +31,7 @@ def test_ipv6_subdomain_rewrites_root_to_ipv6(client: TestClient):
         headers=_curl(FWD_V6, BASE_DOMAIN, {"Host": "ipv6.example.test"}),
     )
     assert r.status_code == 200
-    assert r.text == "2001:db8::1"
+    assert r.text.rstrip("\n") == "2001:db8::1"
 
 
 def test_ipv4_subdomain_v6_client_returns_empty(client: TestClient):
@@ -40,7 +40,7 @@ def test_ipv4_subdomain_v6_client_returns_empty(client: TestClient):
         headers=_curl(FWD_V6, BASE_DOMAIN, {"Host": "ipv4.example.test"}),
     )
     assert r.status_code == 200
-    assert r.text == ""
+    assert r.text.rstrip("\n") == ""
 
 
 def test_apex_host_returns_aggregated_not_single_stack(client: TestClient):
@@ -50,10 +50,14 @@ def test_apex_host_returns_aggregated_not_single_stack(client: TestClient):
     )
     assert r.status_code == 200
     assert "203.0.113.42" in r.text
-    # Aggregated text output includes the IP block + resolver/DNSSEC sections;
+    # Aggregated text output includes IP + RTT + Server lines;
     # single-stack endpoints return just the bare IP.
-    assert "Resolver" in r.text
+    assert "RTT:" in r.text
     assert "Server:" in r.text
+    # DNSSEC + Resolver + Time deliberately absent from curl output.
+    assert "Resolver" not in r.text
+    assert "DNSSEC" not in r.text
+    assert "Time:" not in r.text
 
 
 def test_subdomain_detection_ignores_port(client: TestClient):
@@ -62,7 +66,7 @@ def test_subdomain_detection_ignores_port(client: TestClient):
         headers=_curl(FWD_V4, BASE_DOMAIN, {"Host": "ipv4.example.test:8080"}),
     )
     assert r.status_code == 200
-    assert r.text == "203.0.113.42"
+    assert r.text.rstrip("\n") == "203.0.113.42"
 
 
 def test_subdomain_does_not_rewrite_other_paths(client: TestClient):
@@ -136,7 +140,7 @@ def test_apex_offers_link_to_secure(client: TestClient):
     assert 'href="https://secure.example.test/"' in r.text
 
 
-def test_secure_offers_link_to_apex(client: TestClient):
+def test_secure_offers_link_to_insecure(client: TestClient):
     r = client.get(
         "/",
         headers={
@@ -147,3 +151,24 @@ def test_secure_offers_link_to_apex(client: TestClient):
         },
     )
     assert 'href="http://example.test/"' in r.text
+    assert "insecure" in r.text
+
+
+def test_responsive_header_uses_details_hamburger(client: TestClient):
+    r = client.get(
+        "/",
+        headers={
+            **FWD_V4,
+            **BASE_DOMAIN,
+            "Host": "example.test",
+            "Accept": "text/html",
+        },
+    )
+    body = r.text
+    # Brand link to / and the tagline class JS / CSS hide on narrow screens.
+    assert 'class="cptv-brand"' in body
+    assert 'class="cptv-brand-tagline"' in body
+    # <details>/<summary> hamburger so the menu collapses without JS.
+    assert "cptv-nav-disclosure" in body
+    assert "cptv-nav-toggle" in body
+    assert "cptv-nav-menu" in body

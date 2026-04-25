@@ -49,7 +49,7 @@ def test_asn_json_without_db(client: TestClient):
 def test_isp_text_without_db(client: TestClient):
     r = client.get("/isp", headers=_headers(V4, CURL))
     assert r.status_code == 200
-    assert r.text == "—"
+    assert r.text.rstrip("\n") == "—"
 
 
 # ---------- /dns ----------
@@ -104,7 +104,11 @@ def test_help_html_lists_traceroute_streaming(client: TestClient):
     assert "/traceroute/stream" in r.text
     assert "/traceroute.json" in r.text
     assert "?format=json" in r.text
-    assert "/details" not in r.text
+    # The removed /details endpoint must not be linked anywhere in the
+    # body; the substring would also match the </details> closing tag,
+    # so look for the URL form specifically.
+    assert 'href="/details"' not in r.text
+    assert "<code>/details</code>" not in r.text
 
 
 def test_traceroute_html(client: TestClient):
@@ -159,6 +163,9 @@ def test_aggregated_html_renders_sections(client: TestClient):
     assert 'id="traceroute-section"' in body
     assert 'id="anycast-section"' in body
     assert 'id="request-section"' in body  # request inspection (was /details)
+    # Per-stack enrichment placeholders for the GeoIP / ASN cards.
+    assert 'id="geoip-stacks"' in body
+    assert 'id="asn-stacks"' in body
     assert 'id="ip-history"' in body
     assert 'id="anycast-results"' in body
     assert "/static/vendor/pico.min.css" in body
@@ -178,6 +185,16 @@ def test_details_endpoints_are_gone(client: TestClient):
         assert r.status_code == 404, path
 
 
+def test_404_body_ends_with_newline(client: TestClient):
+    """Custom 404 handler appends \\n so curl + zsh stay tidy."""
+    r = client.get("/totally-bogus-path", headers={"Accept": "application/json"})
+    assert r.status_code == 404
+    assert r.text.endswith("\n")
+    import json
+
+    assert json.loads(r.text)["detail"] == "Not Found"
+
+
 def test_text_hint_appended_on_aggregated(client: TestClient):
     """Plain-text aggregated output ends with a hint pointing at JSON."""
     r = client.get("/", headers=_headers(V4, CURL))
@@ -192,10 +209,10 @@ def test_text_hint_omitted_on_bare_ip_endpoints(client: TestClient):
         assert "tip:" not in r.text, path
 
 
-def test_curl_howto_card_on_home(client: TestClient):
+def test_curl_howto_card_no_longer_on_home(client: TestClient):
+    """Removed in v0.1.5 \u2014 the same content lives in /help instead."""
     r = client.get("/", headers={**V4, "Accept": "text/html"})
-    assert 'id="curl-howto-section"' in r.text
-    assert "curl ipv4." in r.text
+    assert 'id="curl-howto-section"' not in r.text
 
 
 def test_aggregated_json_has_redirect_origin(client: TestClient):

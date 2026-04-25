@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Request, Response
 from fastapi.templating import Jinja2Templates
 
-from cptv.negotiation import respond
+from cptv.negotiation import add_public_cors, respond
 from cptv.services import geoip as geoip_service
 from cptv.services import ip as ip_service
 
@@ -53,13 +53,15 @@ def _register(templates: Jinja2Templates) -> APIRouter:
                 ]
             )
 
-        return respond(
-            request,
-            templates=templates,
-            html_template="section_stub.html",
-            html_context={"heading": "GeoIP", "data": json_data, "present": result is not None},
-            json_data=json_data,
-            text=text,
+        return add_public_cors(
+            respond(
+                request,
+                templates=templates,
+                html_template="section_stub.html",
+                html_context={"heading": "GeoIP", "data": json_data, "present": result is not None},
+                json_data=json_data,
+                text=text,
+            )
         )
 
     return router

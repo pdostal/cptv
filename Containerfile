@@ -32,6 +32,9 @@ RUN apt-get update \
         libcap2-bin \
         ca-certificates \
         tini \
+        iproute2 \
+        iputils-ping \
+        curl \
     && setcap cap_net_raw+ep /usr/bin/mtr-packet \
     && apt-get purge -y --auto-remove libcap2-bin \
     && rm -rf /var/lib/apt/lists/*

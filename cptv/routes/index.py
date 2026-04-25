@@ -119,10 +119,16 @@ def _collect(request: Request) -> dict:
 
 
 def _text_aggregated(data: dict) -> str:
+    """Plain-text aggregated output for curl users.
+
+    Skips DNSSEC, Resolver and the server-side timestamp because they're
+    either browser-only (DNSSEC) or not useful in scripts (timestamps —
+    use the host's own clock). Keeps IP, GeoIP, ASN, RTT, HTTP version
+    and Server identity.
+    """
     ip = data["ip"]
     geo = data["geoip"]
     asn = data["asn"]
-    dns = data["dns"]
     http = data["http"]
     meta = data["meta"]
 
@@ -154,19 +160,9 @@ def _text_aggregated(data: dict) -> str:
         lines.append(f"   Prefix:    {asn['prefix'] or '—'}")
         lines.append("")
 
-    if dns["resolver_ip"]:
-        lines.append(
-            f"🔎 Resolver:  {dns['resolver_ip']}  ({dns['resolver_name'] or 'unknown operator'})"
-        )
-    else:
-        lines.append("🔎 Resolver:  unknown (DNS probe not configured)")
-    lines.append("🔐 DNSSEC:    unable to determine (requires browser)")
-    lines.append("")
-
-    lines.append(f"⏱️  Time:      {data['timing']['server_timestamp']}")
     rtt = data["timing"].get("rtt_ms")
     if rtt is not None:
-        lines.append(f"   RTT:       {rtt}ms (server-side handling)")
+        lines.append(f"⏱️  RTT:       {rtt}ms (server-side handling)")
     lines.append(f"   HTTP:      {http['version']}")
     lines.append(f"   Server:    {meta['server']}  ({meta['repo']})")
 

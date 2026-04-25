@@ -22,7 +22,7 @@ def test_text_when_curl_ua(client: TestClient):
     r = client.get("/ip", headers={**HDR_FWD, "User-Agent": "curl/8.0.0"})
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/plain")
-    assert r.text == "203.0.113.42"
+    assert r.text.rstrip("\n") == "203.0.113.42"
 
 
 def test_query_param_overrides_accept(client: TestClient):
@@ -43,4 +43,4 @@ def test_query_param_overrides_curl_ua(client: TestClient):
 def test_text_format_param(client: TestClient):
     r = client.get("/ip?format=text", headers={**HDR_FWD, "Accept": "application/json"})
     assert r.status_code == 200
-    assert r.text == "203.0.113.42"
+    assert r.text.rstrip("\n") == "203.0.113.42"

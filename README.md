@@ -58,7 +58,39 @@ Place these files in `~/.config/containers/systemd/` (rootless) or
 `/etc/containers/systemd/` (rootful). Quadlet generates one systemd
 service per file.
 
-#### `cptv.pod`
+There are two equally valid network setups. **Pick one.**
+
+#### Recipe A — custom Podman network with a /80 carved from the host /64 (recommended for IPv6 traceroute)
+
+A purpose-built Podman network with both an IPv4 RFC 6598 (CGNAT) range
+and a globally-routable IPv6 /80 carved from the host's /64. Containers
+get real, public v6 addresses, so `ping`, `mtr` and `traceroute` reach
+the public IPv6 internet directly with no NAT66 jiggery-pokery.
+
+`cptv.network` (Quadlet — drops in next to the `.pod` and `.container`
+files):
+
+```ini
+[Unit]
+Description=CPTV network
+
+[Network]
+NetworkName=cptv
+Subnet=100.64.5.0/24
+Gateway=100.64.5.1
+IPv6=true
+# Replace 2001:db8:abcd:1234:: with an /80 carved from your host /64.
+Subnet=2001:db8:abcd:1234::/80
+Gateway=2001:db8:abcd:1234::1
+IPAMDriver=host-local
+InterfaceName=podman-cptv
+Label=app=cptv
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`cptv.pod`:
 
 ```ini
 [Unit]
@@ -70,30 +102,54 @@ PodName=cptv
 # Only the app port is published to the host loopback; nginx is the
 # only thing that talks to it. Valkey stays internal to the pod.
 PublishPort=127.0.0.1:8000:8000
-# Pasta is the rootless network helper Podman ships with; --ipv6 lets
-# the pod reach IPv6 destinations using the host's /64. Without this
-# the IPv6 traceroute on the home page fails with
-# "no IPv6 route to <addr> from this host".
+# Attach to the cptv network with fixed v4/v6 addresses so nginx and
+# DNS records can refer to them stably.
+Network=cptv:ip=100.64.5.2,ip=2001:db8:abcd:1234::2
+Label=app=cptv
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> **Why the /80?**
+> Linux assigns one /128 from the configured subnet to each container.
+> A /80 leaves 48 bits of host space — plenty for cptv plus future
+> pods. Adjust the prefix length to taste; smaller (e.g. /112) is fine.
+> Make sure your host's neighbour-discovery responds for the carved
+> range — for most VPS setups this is automatic because the entire /64
+> is on-link.
+
+#### Recipe B — pasta (simplest, no extra .network file)
+
+Pasta is the rootless network helper Podman ships with. `--ipv6`
+lets the pod reach IPv6 destinations using the host's /64 directly,
+without any sub-prefix delegation. Containers get a "fake" v6
+address that pasta NATs through the host.
+
+```ini
+[Unit]
+Description=cptv pod (app + valkey share localhost)
+After=network-online.target
+
+[Pod]
+PodName=cptv
+PublishPort=127.0.0.1:8000:8000
 Network=pasta:--ipv6
 
 [Install]
 WantedBy=default.target
 ```
 
-> **IPv6 on a /64-only host (the common case for VPSes)**
->
-> Podman's pasta network helper just borrows the host's IPv6 routes; you
-> do NOT need to delegate a sub-prefix or set up neighbour discovery
-> proxying. Verify with:
+> Verify either recipe works with:
 >
 > ```sh
 > podman exec cptv ping -c 1 -6 2606:4700:4700::1111
 > ```
 >
-> If that fails but the host can reach the same address, double-check
-> that `/proc/sys/net/ipv6/conf/all/forwarding` is `1` (set in
-> `/etc/sysctl.d/`) and that the host firewall isn't dropping outbound
-> ICMPv6 from the pasta interface.
+> If that fails but the host can reach the same address, check that
+> `/proc/sys/net/ipv6/conf/all/forwarding` is `1` (set in
+> `/etc/sysctl.d/`) and that the host firewall isn't dropping
+> outbound ICMPv6 from the container interface.
 
 #### `cptv-valkey.container`
 
@@ -136,12 +192,27 @@ Environment=CPTV_VALKEY_HOST=127.0.0.1
 Environment=CPTV_VALKEY_PORT=6379
 AutoUpdate=registry
 
-# Uncomment and customise as needed:
-# Environment=CPTV_QUICK_LINKS=[{"label":"Status","url":"https://status.example.net","icon":"🟢"}]
+# Optional: a Quick Links section on the home page. Set on the
+# CONTAINER, not the pod \u2014 Quadlet does not propagate Environment=
+# from .pod files into the .container processes.
+# Single-line JSON array; the value of the env var must be quoted.
+Environment=CPTV_QUICK_LINKS_TITLE=Operator tools
+Environment=CPTV_QUICK_LINKS=[{"label":"Status page","url":"https://status.example.net","icon":"\ud83d\udfe2","description":"green = good"},{"label":"Internal wiki","url":"https://wiki.example.net","icon":"\ud83d\udcd6"},{"label":"Looking glass","url":"https://lg.example.net","icon":"\ud83d\udd2d"}]
 
 [Install]
 WantedBy=default.target
 ```
+
+> **Quick Links live on the .container, not the .pod.** Quadlet
+> doesn't forward `[Pod]` `Environment=` lines into individual
+> container processes. If `CPTV_QUICK_LINKS` doesn't show up in the
+> rendered home page, double-check it sits on `cptv.container` and
+> reload the service:
+>
+> ```sh
+> systemctl --user restart cptv.service
+> curl -s http://cptv.example.com/?format=json | jq .quick_links
+> ```
 
 ### 2. Load and start the units
 

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from cptv.middleware import RequestTimingMiddleware, SubdomainMiddleware
 from cptv.routes import asn as asn_routes
@@ -34,7 +37,7 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="cptv",
         description="CaPTiVe — self-hosted network diagnostics. See PLAN.md.",
-        version="0.1.4",
+        version="0.1.5",
         lifespan=lifespan,
     )
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -52,6 +55,21 @@ def create_app() -> FastAPI:
     application.include_router(help_routes._register(templates))
     application.include_router(index_routes._register(templates))
     application.include_router(traceroute_routes._register(templates))
+
+    # Custom HTTPException handler that appends a trailing newline so
+    # error bodies don't trigger zsh's reverse-video '%' indicator on
+    # missing-newline responses, and so curl prints them cleanly.
+    # Hooked on Starlette's base HTTPException so 404s and validation
+    # errors raised by the framework also get the newline.
+    @application.exception_handler(StarletteHTTPException)
+    async def _http_exception_with_newline(_request: Request, exc: StarletteHTTPException):
+        body = json.dumps({"detail": exc.detail}, separators=(",", ":")) + "\n"
+        return Response(
+            content=body,
+            status_code=exc.status_code,
+            media_type="application/json",
+            headers=getattr(exc, "headers", None) or {},
+        )
 
     return application
 

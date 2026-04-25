@@ -41,11 +41,20 @@ _TEXT_HINT = "\n\n# tip: append ?format=json for JSON, or see /help"
 
 
 def _with_hint(text: str, *, hint: bool) -> str:
-    """Append the standard 'append ?format=json' hint for plain-text users."""
-    if not hint:
-        return text
+    """Render the plain-text body with a trailing newline.
+
+    Always appends the trailing newline (so zsh doesn't print a reverse-
+    video '%' to mark the missing line break). When ``hint=True`` we also
+    append the '# tip: …' line that points readers at JSON / /help.
+
+    Shell capture stays clean either way: ``$()`` strips trailing
+    newlines automatically, so ``MY_IP=$(curl ipv4.cptv.cz)`` still
+    yields a bare IP even though the response now ends with '\\n'.
+    """
     body = text.rstrip("\n")
-    return f"{body}{_TEXT_HINT}\n"
+    if hint:
+        return f"{body}{_TEXT_HINT}\n"
+    return f"{body}\n"
 
 
 def respond(
@@ -93,9 +102,11 @@ def respond(
 def add_public_cors(response: Response) -> Response:
     """Mark a response as safe for cross-origin reads from anywhere.
 
-    Used by the IP echo endpoints (/ip, /ipv4, /ipv6 and aliases) so the
-    home page's dual-stack probe — which runs at ``cptv.cz`` and fetches
-    ``ipv4.cptv.cz`` / ``ipv6.cptv.cz`` — can actually read the body.
+    Used by the IP echo endpoints (/ip, /ipv4, /ipv6 and aliases), the
+    sectional endpoints (/asn, /isp, /geoip, /dns) and the SSE traceroute
+    stream so the home page can probe the v4 and v6 stacks side by side
+    via ``//ipv4.<base>/…`` and ``//ipv6.<base>/…``. Without this header
+    the browser silently withholds cross-origin response bodies.
 
     These endpoints are public, idempotent, contain no secrets, and
     accept no credentials, so wildcard CORS is safe. We deliberately

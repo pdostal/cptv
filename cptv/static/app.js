@@ -132,6 +132,159 @@
     }
   }
 
+  // ---------- per-stack ASN/GeoIP enrichment ----------
+  // Once dual-stack discovery has the IPs, fetch /asn and /geoip from
+  // both ipv4. and ipv6. so the GeoIP and ASN cards can show fresh
+  // data per family. Equal values render once; differing values render
+  // both labelled by stack.
+  async function fetchStack(stack, base, port, path) {
+    const url = `//${stack}.${base}${port}${path}?format=json`;
+    try {
+      const resp = await fetch(url, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch {
+      return null;
+    }
+  }
+
+  // Render either a single merged row (when both stacks agree) or one
+  // row per stack into a target container. The row builder receives
+  // the data dict and returns a DocumentFragment.
+  function renderPerStack(target, perStack, rowBuilder, equalKeys) {
+    if (!target) return;
+    target.replaceChildren();
+    target.hidden = false;
+
+    const ipv4 = perStack.ipv4;
+    const ipv6 = perStack.ipv6;
+
+    if (!ipv4 && !ipv6) {
+      target.hidden = true;
+      return;
+    }
+
+    const equal =
+      ipv4 &&
+      ipv6 &&
+      equalKeys.every((k) => JSON.stringify(ipv4[k]) === JSON.stringify(ipv6[k]));
+
+    if (ipv4 && ipv6 && equal) {
+      target.appendChild(rowBuilder(ipv4, "both"));
+    } else {
+      if (ipv4) target.appendChild(rowBuilder(ipv4, "IPv4"));
+      if (ipv6) target.appendChild(rowBuilder(ipv6, "IPv6"));
+    }
+  }
+
+  function buildGeoipRow(data, label) {
+    const ul = document.createElement("ul");
+    if (label !== "both") {
+      const head = document.createElement("li");
+      head.innerHTML = `<strong>${label}</strong>`;
+      ul.appendChild(head);
+    }
+    const country = document.createElement("li");
+    country.textContent = `Country: ${data.country_code || "?"} ${data.country || ""}`.trimEnd();
+    ul.appendChild(country);
+    if (data.region) {
+      const li = document.createElement("li");
+      li.textContent = `Region: ${data.region}`;
+      ul.appendChild(li);
+    }
+    const city = document.createElement("li");
+    city.textContent = `City: ${data.city || "—"}`;
+    ul.appendChild(city);
+    if (data.latitude != null && data.longitude != null) {
+      const c = document.createElement("li");
+      c.textContent = `Coords: ${data.latitude.toFixed(4)}, ${data.longitude.toFixed(4)}`;
+      ul.appendChild(c);
+    }
+    return ul;
+  }
+
+  function buildAsnRow(data, label) {
+    const ul = document.createElement("ul");
+    if (label !== "both") {
+      const head = document.createElement("li");
+      head.innerHTML = `<strong>${label}</strong>`;
+      ul.appendChild(head);
+    }
+    const asn = document.createElement("li");
+    asn.innerHTML = `ASN: <strong>AS${data.asn}</strong>`;
+    ul.appendChild(asn);
+    if (data.name) {
+      const li = document.createElement("li");
+      li.textContent = `Operator: ${data.name}`;
+      ul.appendChild(li);
+    }
+    if (data.prefix) {
+      const li = document.createElement("li");
+      const code = document.createElement("code");
+      code.textContent = data.prefix;
+      li.append("Prefix: ", code);
+      ul.appendChild(li);
+    }
+    if (data.looking_glass) {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = data.looking_glass;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = "BGP looking glass ↗";
+      li.appendChild(a);
+      ul.appendChild(li);
+    }
+    return ul;
+  }
+
+  async function enrichDualStackInfo() {
+    const host = window.location.hostname;
+    if (!host || host === "localhost" || host === "127.0.0.1") return;
+    const base = getBaseDomain();
+    const port = window.location.port ? `:${window.location.port}` : "";
+
+    const [g4, g6, a4, a6] = await Promise.all([
+      fetchStack("ipv4", base, port, "/geoip"),
+      fetchStack("ipv6", base, port, "/geoip"),
+      fetchStack("ipv4", base, port, "/asn"),
+      fetchStack("ipv6", base, port, "/asn"),
+    ]);
+
+    // Treat all-null GeoIP as "no data" so we don't render an empty row.
+    const haveData = (d) =>
+      d &&
+      Object.values(d).some((v) => v !== null && v !== undefined && v !== "");
+
+    const geoipStacks = qs("#geoip-stacks");
+    const geoipFallback = qs("#geoip-fallback");
+    const asnStacks = qs("#asn-stacks");
+    const asnFallback = qs("#asn-fallback");
+
+    const geo = { ipv4: haveData(g4) ? g4 : null, ipv6: haveData(g6) ? g6 : null };
+    const asn = { ipv4: haveData(a4) ? a4 : null, ipv6: haveData(a6) ? a6 : null };
+
+    if (geoipStacks && (geo.ipv4 || geo.ipv6)) {
+      renderPerStack(geoipStacks, geo, buildGeoipRow, [
+        "country_code",
+        "country",
+        "region",
+        "city",
+      ]);
+      if (geoipFallback) geoipFallback.hidden = true;
+    }
+    if (asnStacks && (asn.ipv4 || asn.ipv6)) {
+      renderPerStack(asnStacks, asn, buildAsnRow, ["asn", "name", "prefix"]);
+      if (asnFallback) asnFallback.hidden = true;
+    }
+
+    // Hand the freshly-fetched per-stack info to the history tracker.
+    return { geo, asn };
+  }
+
   // ---------- DNSSEC probe ----------
   // Loads an image from rhybar.cz (intentionally signed with an invalid
   // DNSSEC signature by CZ.NIC) and from a control host. If only the
@@ -153,8 +306,8 @@
 
     const render = () => {
       // Conclusion table:
-      //   control loaded  & bogus loaded   → 🔴 not validating
-      //   control loaded  & bogus errored  → 🟢 validating
+      //   control loaded  & bogus loaded   → 🔴 NOT OK
+      //   control loaded  & bogus errored  → 🟢 OK
       //   control errored                 → ⚪ inconclusive (control unreachable)
       //   any timeout                     → ⚪ inconclusive (timeout)
       if (results.control === null || results.bogus === null) {
@@ -171,9 +324,11 @@
         return;
       }
       if (results.bogus === "loaded") {
-        badge.textContent = "🔴 not validating (resolver returned bogus record)";
+        badge.textContent =
+          "🔴 NOT OK — your resolver does not validate DNSSEC (bogus record accepted)";
       } else {
-        badge.textContent = "🟢 validating (bogus record was rejected)";
+        badge.textContent =
+          "🟢 OK — your resolver validates DNSSEC (bogus record rejected)";
       }
     };
 
@@ -325,6 +480,28 @@
     const stopPulse = () => pane.classList.remove("is-running");
     const source = new window.EventSource(streamUrl);
 
+    let opened = false;
+    source.addEventListener("open", () => {
+      opened = true;
+      setStatus(
+        `<p><small>Connection established to ${streamUrl}; waiting for the first hop…</small></p>`,
+      );
+    });
+
+    // If the browser never fires 'open' within this window, the SSE
+    // connection probably failed (CORS, DNS, no route). Surface a clear
+    // message instead of leaving the pane stuck on 'Connecting…'.
+    window.setTimeout(() => {
+      if (opened) return;
+      setStatus(
+        `<p><mark>\u26a0\ufe0f No response from <code>${streamUrl}</code> after 5 s. ` +
+          "The stream may be blocked by CORS, the subdomain may not resolve, " +
+          "or the server has no route to your address.</mark></p>",
+      );
+      stopPulse();
+      source.close();
+    }, 5000);
+
     source.addEventListener("status", (ev) => setStatus(ev.data));
     source.addEventListener("hop", (ev) => swapHop(ev.data));
     source.addEventListener("done", (ev) => {
@@ -334,7 +511,8 @@
     });
     source.addEventListener("error", (ev) => {
       // Browser fires a generic 'error' Event on connection problems with
-      // empty data. Only render if the server sent a real message.
+      // empty data. Render the server-supplied message when present;
+      // otherwise (CORS / network failure) the timeout above handles it.
       if (ev && typeof ev.data === "string" && ev.data) {
         setStatus(ev.data);
         stopPulse();
@@ -480,7 +658,11 @@
   }
 
   // ---------- session history (localStorage, never sent to server) ----------
-  const HISTORY_KEY = "cptv:history:v1";
+  // v2 schema:
+  //   { ip, protocol, asn_number, asn_name, city, first_seen, last_seen, count }
+  // The v2 storage key is separate from v1 so we don't have to migrate
+  // partial entries; old data coexists harmlessly until the user clears.
+  const HISTORY_KEY = "cptv:history:v2";
 
   function readHistory() {
     try {
@@ -501,7 +683,10 @@
     }
   }
 
-  function recordSeen(ip, protocol) {
+  // Record (or update) an IP, merging new fields onto the existing entry
+  // when present. Empty / placeholder values are ignored so a transient
+  // '…' from the dual-stack probe never overwrites a real IP.
+  function recordSeen(ip, protocol, extras = {}) {
     if (!ip || ip === "…" || ip === "—" || ip === "unknown") return null;
     const now = new Date().toISOString();
     const entries = readHistory();
@@ -510,10 +695,17 @@
       existing.last_seen = now;
       existing.count = (existing.count || 1) + 1;
       if (protocol && !existing.protocol) existing.protocol = protocol;
+      // Always overwrite enrichment fields with the freshest data.
+      if (extras.asn_number != null) existing.asn_number = extras.asn_number;
+      if (extras.asn_name) existing.asn_name = extras.asn_name;
+      if (extras.city) existing.city = extras.city;
     } else {
       entries.push({
         ip,
         protocol: protocol || null,
+        asn_number: extras.asn_number ?? null,
+        asn_name: extras.asn_name ?? null,
+        city: extras.city ?? null,
         first_seen: now,
         last_seen: now,
         count: 1,
@@ -527,10 +719,12 @@
     const list = qs("#ip-history");
     if (!list) return;
     const entries = readHistory();
-    list.innerHTML = "";
+    list.replaceChildren();
     if (entries.length === 0) {
       const empty = document.createElement("li");
-      empty.innerHTML = "<small>No history yet.</small>";
+      const small = document.createElement("small");
+      small.textContent = "No history yet.";
+      empty.appendChild(small);
       list.appendChild(empty);
       return;
     }
@@ -540,17 +734,26 @@
     );
     for (const entry of sorted) {
       const li = document.createElement("li");
-      // Build with text nodes / setAttribute so localStorage content can never
-      // be reinterpreted as HTML (CodeQL js/xss-through-dom).
+      // Build via DOM API so cached localStorage values are never
+      // reinterpreted as HTML (CodeQL js/xss-through-dom).
       const code = document.createElement("code");
       code.textContent = String(entry.ip || "");
-      const small = document.createElement("small");
-      const proto = entry.protocol ? ` (${entry.protocol})` : "";
-      const seenN = entry.count > 1 ? ` · seen ${entry.count}\u00d7` : "";
-      const last = entry.last_seen ? String(entry.last_seen).replace("T", " ") : "?";
-      small.textContent = `${proto}${seenN} · last ${last}`;
       li.appendChild(code);
-      li.appendChild(document.createTextNode(" "));
+
+      const small = document.createElement("small");
+      const bits = [];
+      if (entry.protocol) bits.push(entry.protocol);
+      if (entry.asn_number != null) {
+        const asnLabel = entry.asn_name
+          ? `AS${entry.asn_number} ${entry.asn_name}`
+          : `AS${entry.asn_number}`;
+        bits.push(asnLabel);
+      }
+      if (entry.city) bits.push(entry.city);
+      if (entry.count > 1) bits.push(`seen ${entry.count}\u00d7`);
+      const last = entry.last_seen ? String(entry.last_seen).replace("T", " ") : "?";
+      bits.push(`last ${last}`);
+      small.textContent = ` \u2014 ${bits.join(" \u00b7 ")}`;
       li.appendChild(small);
       list.appendChild(li);
     }
@@ -569,26 +772,41 @@
     });
   }
 
-  function trackHistory() {
+  // Pull the per-stack ASN/city info that enrichDualStackInfo() fetched
+  // and stamp it onto the matching entry. Falls through gracefully when
+  // the enrichment is missing (offline, CORS-blocked, etc.).
+  function extrasFor(stack, enriched) {
+    if (!enriched) return {};
+    const a = enriched.asn?.[stack];
+    const g = enriched.geo?.[stack];
+    return {
+      asn_number: a?.asn ?? null,
+      asn_name: a?.name ?? null,
+      city: g?.city ?? null,
+    };
+  }
+
+  function trackHistory(enriched) {
     // Pull current IP / protocol off the page (already rendered server-side).
     const currentEl = qs(".ip-current");
     const dualEl = qs("#dual-stack");
     const currentIp = currentEl ? currentEl.textContent.trim() : null;
     const protocol = dualEl ? dualEl.dataset.protocol || null : null;
-    if (currentIp) recordSeen(currentIp, protocol);
+    if (currentIp) {
+      const stack = protocol === "IPv6" ? "ipv6" : protocol === "IPv4" ? "ipv4" : null;
+      recordSeen(currentIp, protocol, stack ? extrasFor(stack, enriched) : {});
+    }
 
-    // Also record any other-stack IP discovered by the dual-stack probe.
-    // Re-render history when the probe updates the DOM.
-    renderHistory();
+    // Record any other-stack IP discovered by the dual-stack probe and
+    // tag it with that stack's enrichment data.
     document.querySelectorAll("[data-ds]").forEach((el) => {
-      const observer = new MutationObserver(() => {
-        const stack = el.dataset.ds;
-        const ip = el.textContent.trim();
-        const proto = stack === "ipv4" ? "IPv4" : stack === "ipv6" ? "IPv6" : null;
-        if (recordSeen(ip, proto)) renderHistory();
-      });
-      observer.observe(el, { childList: true, characterData: true, subtree: true });
+      const stack = el.dataset.ds;
+      const ip = el.textContent.trim();
+      const proto = stack === "ipv4" ? "IPv4" : stack === "ipv6" ? "IPv6" : null;
+      recordSeen(ip, proto, extrasFor(stack, enriched));
     });
+
+    renderHistory();
   }
 
   // ---------- browser geolocation (opt-in) ----------
@@ -651,16 +869,22 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  document.addEventListener("DOMContentLoaded", async () => {
     checkClockSkew();
-    detectDualStack();
     checkDnssec();
     wireGeolocationButton();
-    trackHistory();
     wireHistoryClearButton();
     detectAnycastPop();
     detectResolver();
-    wireTracerouteWhenStacksKnown();
     wireThemeToggle();
+    renderHistory(); // Always render the history card from cached entries.
+
+    // detectDualStack must finish before per-stack enrichment fires so we
+    // know which IPs to enrich. Enrichment then feeds the history tracker
+    // with fresh ASN/city values for each stack's IP.
+    await detectDualStack();
+    const enriched = await enrichDualStackInfo();
+    trackHistory(enriched);
+    wireTracerouteWhenStacksKnown();
   });
 })();

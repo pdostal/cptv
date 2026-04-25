@@ -26,65 +26,64 @@
   </head>
   <body>
     <header class="container">
-      <nav>
-        <ul>
-          <li>
-            {% set _sub = request.state.subdomain if request else none %}
-            <strong>
-              {%- if _sub == "secure" -%}
-                <span class="cptv-brand-prefix">secure.</span>cptv
-              {%- else -%}
-                cptv
-              {%- endif -%}
-            </strong>
-            <small>— CaPTiVe network diagnostics</small>
-          </li>
-        </ul>
-        <ul>
-          <li><a href="/">home</a></li>
-          <li><a href="/help">help</a></li>
-          <li>
-            <button
-              type="button"
-              id="theme-toggle"
-              class="secondary outline"
-              title="Cycle theme: auto → light → dark"
-              aria-label="Cycle theme"
-            >
-              theme: <span id="theme-toggle-label">auto</span>
-            </button>
-          </li>
-          {# Quick switch between the apex (HTTP) and secure. (HTTPS).
-             Always rendered so the alternate is one click away. #}
-          {% set _base = request.state.base_domain if request else "" %}
-          {% if request and request.state.subdomain == "secure" %}
-          <li>
-            {# djlint:off H022 -- apex is HTTP-only by design (PLAN \u00a72) #}
-            <a
-              href="http://{{ _base }}/"
-              title="Open the apex (HTTP) version of this site"
-              >🔓 apex</a
-            >
-            {# djlint:on #}
-          </li>
-          {% else %}
-          <li>
-            <a
-              href="https://secure.{{ _base }}/"
-              title="Open the TLS-enforced (secure.) version of this site"
-              >🔒 secure</a
-            >
-          </li>
-          {% endif %}
-          <li>
-            <a
-              href="https://github.com/pdostal/cptv"
-              target="_blank"
-              rel="noopener noreferrer"
-              >github</a
-            >
-          </li>
-        </ul>
+      <nav class="cptv-nav">
+        <a href="/" class="cptv-brand">
+          {% set _sub = request.state.subdomain if request else none %}
+          <strong>
+            {%- if _sub == "secure" -%}
+              <span class="cptv-brand-prefix">secure.</span>cptv
+            {%- else -%}
+              cptv
+            {%- endif -%}
+          </strong>
+          <small class="cptv-brand-tagline">— CaPTiVe network diagnostics</small>
+        </a>
+
+        {# Controls collapse into a hamburger <details> on narrow viewports.
+           Using <details>/<summary> means it works without JavaScript;
+           CSS hides the disclosure and inlines the menu on wide ones. #}
+        {% set _base = request.state.base_domain if request else "" %}
+        <details class="cptv-nav-disclosure">
+          <summary
+            class="cptv-nav-toggle"
+            aria-label="Open navigation"
+            title="Open navigation"
+          >☰</summary>
+          <ul class="cptv-nav-menu">
+            <li><a href="/">home</a></li>
+            <li><a href="/help">help</a></li>
+            <li>
+              <button
+                type="button"
+                id="theme-toggle"
+                class="secondary outline"
+                title="Cycle theme: auto → light → dark"
+                aria-label="Cycle theme"
+              >
+                theme: <span id="theme-toggle-label">auto</span>
+              </button>
+            </li>
+            {% if request and request.state.subdomain == "secure" %}
+            <li>
+              {# djlint:off H022 -- apex is HTTP-only by design (PLAN \u00a72) #}
+              <a
+                href="http://{{ _base }}/"
+                title="Open the insecure (HTTP) version of this site"
+                >🔓 insecure</a
+              >
+              {# djlint:on #}
+            </li>
+            {% else %}
+            <li>
+              <a
+                href="https://secure.{{ _base }}/"
+                title="Open the TLS-enforced (secure.) version of this site"
+                >🔒 secure</a
+              >
+            </li>
+            {% endif %}
+          </ul>
+        </details>
       </nav>
     </header>
 
@@ -96,6 +95,16 @@
         Server sees only your IP. Everything else — location, history, DNSSEC —
         is computed in your browser and stays there. 🔒
         <br />
+        cptv by
+        <a
+          href="https://pdostal.cz"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Pavel Dostál</a
+        >
+        ·
+        <a href="mailto:pdostal@pdostal.cz">pdostal@pdostal.cz</a>
+        ·
         <a
           href="https://github.com/pdostal/cptv"
           target="_blank"
