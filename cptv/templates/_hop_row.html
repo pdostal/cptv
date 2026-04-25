@@ -22,6 +22,6 @@
 {% else %}
 <tr id="hop-{{ hop.hop }}" hx-swap-oob="true" class="hop-no-reply">
   <td data-label="Hop">{{ hop.hop }}</td>
-  <td colspan="7"><code>* * *</code> <small>{{ "%.1f"|format(hop.loss_pct) }}% loss</small></td>
+  <td colspan="7"><code>* * *</code></td>
 </tr>
 {% endif %}
