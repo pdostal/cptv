@@ -325,6 +325,28 @@
     const stopPulse = () => pane.classList.remove("is-running");
     const source = new window.EventSource(streamUrl);
 
+    let opened = false;
+    source.addEventListener("open", () => {
+      opened = true;
+      setStatus(
+        `<p><small>Connection established to ${streamUrl}; waiting for the first hop…</small></p>`,
+      );
+    });
+
+    // If the browser never fires 'open' within this window, the SSE
+    // connection probably failed (CORS, DNS, no route). Surface a clear
+    // message instead of leaving the pane stuck on 'Connecting…'.
+    window.setTimeout(() => {
+      if (opened) return;
+      setStatus(
+        `<p><mark>\u26a0\ufe0f No response from <code>${streamUrl}</code> after 5 s. ` +
+          "The stream may be blocked by CORS, the subdomain may not resolve, " +
+          "or the server has no route to your address.</mark></p>",
+      );
+      stopPulse();
+      source.close();
+    }, 5000);
+
     source.addEventListener("status", (ev) => setStatus(ev.data));
     source.addEventListener("hop", (ev) => swapHop(ev.data));
     source.addEventListener("done", (ev) => {
@@ -334,7 +356,8 @@
     });
     source.addEventListener("error", (ev) => {
       // Browser fires a generic 'error' Event on connection problems with
-      // empty data. Only render if the server sent a real message.
+      // empty data. Render the server-supplied message when present;
+      // otherwise (CORS / network failure) the timeout above handles it.
       if (ev && typeof ev.data === "string" && ev.data) {
         setStatus(ev.data);
         stopPulse();

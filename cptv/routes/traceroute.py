@@ -150,6 +150,7 @@ def _register(templates: Jinja2Templates) -> APIRouter:
         /traceroute or /traceroute.json.
         """
         address = ip_service.client_ip(request)
+        log.info("traceroute SSE opened from %s host=%s", address, request.headers.get("host"))
         if address is None:
 
             async def _err():
