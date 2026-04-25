@@ -153,8 +153,8 @@
 
     const render = () => {
       // Conclusion table:
-      //   control loaded  & bogus loaded   → 🔴 not validating
-      //   control loaded  & bogus errored  → 🟢 validating
+      //   control loaded  & bogus loaded   → 🔴 NOT OK
+      //   control loaded  & bogus errored  → 🟢 OK
       //   control errored                 → ⚪ inconclusive (control unreachable)
       //   any timeout                     → ⚪ inconclusive (timeout)
       if (results.control === null || results.bogus === null) {
@@ -171,9 +171,11 @@
         return;
       }
       if (results.bogus === "loaded") {
-        badge.textContent = "🔴 not validating (resolver returned bogus record)";
+        badge.textContent =
+          "🔴 NOT OK — your resolver does not validate DNSSEC (bogus record accepted)";
       } else {
-        badge.textContent = "🟢 validating (bogus record was rejected)";
+        badge.textContent =
+          "🟢 OK — your resolver validates DNSSEC (bogus record rejected)";
       }
     };
 
