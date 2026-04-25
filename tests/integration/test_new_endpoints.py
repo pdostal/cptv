@@ -88,6 +88,23 @@ def test_help_text_has_endpoints(client: TestClient):
     assert "ENDPOINTS" in r.text
     assert "/ipv4" in r.text
     assert "/traceroute" in r.text
+    # Must surface the streaming + suffix-format variants per item-7 review.
+    assert "/traceroute.json" in r.text
+    assert "/traceroute.txt" in r.text
+    assert "/traceroute/stream" in r.text
+    # ?format=json should be advertised so plain-text users discover it.
+    assert "?format=json" in r.text
+    # The dropped /details endpoint must NOT appear anymore.
+    assert "/details" not in r.text
+
+
+def test_help_html_lists_traceroute_streaming(client: TestClient):
+    r = client.get("/help", headers={"Accept": "text/html"})
+    assert r.status_code == 200
+    assert "/traceroute/stream" in r.text
+    assert "/traceroute.json" in r.text
+    assert "?format=json" in r.text
+    assert "/details" not in r.text
 
 
 def test_traceroute_html(client: TestClient):

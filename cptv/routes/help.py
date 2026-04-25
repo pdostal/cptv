@@ -14,35 +14,50 @@ cptv — CaPTiVe network diagnostics
 https://github.com/pdostal/cptv
 
 ENDPOINTS
-    /              Full info (auto-detects format)
-    /ip            Current IP address
-    /ipv4 /ip4 /4  IPv4 address only
-    /ipv6 /ip6 /6  IPv6 address only
-    /geoip         Geolocation
-    /asn           ASN and network info
-    /isp           ISP name
-    /dns           DNS resolver info
-    /details       Extended output
-    /traceroute    Traceroute status
-    /help          This help text
-    /health        Service health check (JSON)
+    /                      Full aggregated info
+                           (auto-detects HTML / JSON / text)
+    /ip                    Current connection IP (bare value, scriptable)
+    /ipv4 /ip4 /4          IPv4 only (bare value, scriptable)
+    /ipv6 /ip6 /6          IPv6 only (bare value, scriptable)
+    /geoip                 Country + city + coordinates
+    /asn                   ASN, operator name, prefix, looking-glass URL
+    /isp                   "<name> (AS<n>)" (bare value, scriptable)
+    /dns                   DNS resolver classifier (?resolver=… optional)
+    /traceroute            Full traceroute, blocking
+    /traceroute.json       Same, JSON only
+    /traceroute.txt        Same, plain text only
+    /traceroute/stream     Server-Sent Events of hops as they arrive
+    /help                  This text
+    /health                Service health (always JSON)
+    /docs /redoc           Auto-generated OpenAPI explorers
+    /openapi.json          Raw OpenAPI schema
 
 SUBDOMAINS
-    ipv4.{domain}   Force IPv4  (also: curl ipv4.{domain})
-    ipv6.{domain}   Force IPv6  (also: curl ipv6.{domain})
-    secure.{domain} HTTPS only
+    {domain}                Apex (HTTP only — captive-portal-friendly)
+    www.{domain}            Same as apex
+    ipv4.{domain}           DNS A only — forces IPv4 (HTTP + HTTPS)
+    ipv6.{domain}           DNS AAAA only — forces IPv6 (HTTP + HTTPS)
+    secure.{domain}         TLS-enforced mirror of the apex (HTTPS only)
 
-FORMAT
-    Append ?format=json or ?format=text to any endpoint.
-    Or set Accept: application/json header.
-    curl auto-detected — plain text returned by default.
+FORMAT NEGOTIATION
+    Each endpoint speaks three formats. Pick one:
+      ?format=text                       force plain text
+      ?format=json                       force JSON
+      ?format=html                       force HTML
+      Accept: application/json header    JSON
+      Accept: text/html header           HTML
+      User-Agent: curl/*                 plain text (auto-detected)
 
 EXAMPLES
-    curl {domain}
-    curl ipv4.{domain}
-    curl {domain}/geoip
-    curl {domain}/asn?format=json
-    MY_IP=$(curl -s ipv4.{domain})
+    curl {domain}                        # aggregated text
+    curl {domain}/?format=json           # aggregated JSON
+    curl ipv4.{domain}                   # bare IPv4, no decoration
+    curl ipv6.{domain}                   # bare IPv6, no decoration
+    MY_IP=$(curl -s ipv4.{domain})       # capture in shell
+    curl {domain}/geoip                  # one section, plain text
+    curl {domain}/asn?format=json        # one section, JSON
+    curl {domain}/traceroute.txt         # blocking traceroute
+    curl -I {domain}/ip                  # response headers
 """
 
 
