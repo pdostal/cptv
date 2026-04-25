@@ -15,6 +15,23 @@
   color: var(--pico-color-blue-500, #0050b8);
 }
 
+/* Per-stack ASN / GeoIP rows. When v4 and v6 differ the JS appends
+   two <ul>s into these containers; auto-fit grid puts them
+   side-by-side when the card is wide enough (~28 rem) and stacks
+   them on phone widths. When the JS appends a single merged <ul>
+   it just fills the row. */
+#geoip-stacks,
+#asn-stacks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0 1.5rem;
+  align-items: start;
+}
+#geoip-stacks > ul,
+#asn-stacks > ul {
+  margin: 0;
+}
+
 /* The request-headers dump in the request-inspection panel can have
    long header values; let them wrap so they don't blow out the card. */
 .cptv-headers-dump {
