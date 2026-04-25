@@ -136,7 +136,7 @@ def test_apex_offers_link_to_secure(client: TestClient):
     assert 'href="https://secure.example.test/"' in r.text
 
 
-def test_secure_offers_link_to_apex(client: TestClient):
+def test_secure_offers_link_to_insecure(client: TestClient):
     r = client.get(
         "/",
         headers={
@@ -147,3 +147,4 @@ def test_secure_offers_link_to_apex(client: TestClient):
         },
     )
     assert 'href="http://example.test/"' in r.text
+    assert "insecure" in r.text
