@@ -258,6 +258,26 @@ OnCalendar=*-*-* 04:00:00
 
 nginx handles TLS termination, subdomain routing, and header injection. The base domain is passed to the app via the `X-Base-Domain` header — this is how the app stays domain-agnostic.
 
+### `/etc/nginx/snippets/cptv-proxy.conf`
+
+The same `proxy_pass` + `proxy_set_header` block lives in every cptv vhost. Extract it into a snippet so each vhost is one `include` line:
+
+```nginx
+# Shared upstream config for cptv. Include this from every vhost
+# location block. The connection-protocol headers are essential —
+# uvicorn always sees HTTP/1.1 from the loopback hop, so the app
+# reads them to populate data["protocol"] and the /protocol endpoint.
+proxy_pass         http://127.0.0.1:8000;
+proxy_set_header   Host                       $host;
+proxy_set_header   X-Base-Domain              $host_base_domain;
+proxy_set_header   X-Forwarded-For            $remote_addr;
+proxy_set_header   X-Forwarded-Proto          $scheme;
+proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
+proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
+proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
+proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+```
+
 ### `/etc/nginx/sites-available/cptv.conf`
 
 Replace `cptv.example.com` with your actual domain throughout.
@@ -277,18 +297,7 @@ server {
                 ipv4.cptv.example.com ipv6.cptv.example.com;
 
     location / {
-        proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host                       $host;
-        proxy_set_header   X-Base-Domain              $host_base_domain;
-        proxy_set_header   X-Forwarded-For            $remote_addr;
-        proxy_set_header   X-Forwarded-Proto          $scheme;
-        # Connection-protocol info — uvicorn always sees HTTP/1.1 from
-        # the loopback hop, so the app reads these to populate
-        # data["protocol"] and the /protocol endpoint.
-        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
-        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
-        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
-        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+        include snippets/cptv-proxy.conf;
     }
 }
 
@@ -319,15 +328,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
 
     location / {
-        proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host                       $host;
-        proxy_set_header   X-Base-Domain              $host_base_domain;
-        proxy_set_header   X-Forwarded-For            $remote_addr;
-        proxy_set_header   X-Forwarded-Proto          $scheme;
-        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
-        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
-        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
-        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+        include snippets/cptv-proxy.conf;
     }
 }
 
@@ -351,15 +352,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
 
     location / {
-        proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host                       $host;
-        proxy_set_header   X-Base-Domain              $host_base_domain;
-        proxy_set_header   X-Forwarded-For            $remote_addr;
-        proxy_set_header   X-Forwarded-Proto          $scheme;
-        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
-        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
-        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
-        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+        include snippets/cptv-proxy.conf;
     }
 }
 
@@ -379,15 +372,7 @@ server {
     ssl_alpn http/1.1;
 
     location / {
-        proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host                       $host;
-        proxy_set_header   X-Base-Domain              $host_base_domain;
-        proxy_set_header   X-Forwarded-For            $remote_addr;
-        proxy_set_header   X-Forwarded-Proto          $scheme;
-        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
-        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
-        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
-        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+        include snippets/cptv-proxy.conf;
     }
 }
 
@@ -403,15 +388,7 @@ server {
     ssl_alpn h2 http/1.1;
 
     location / {
-        proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host                       $host;
-        proxy_set_header   X-Base-Domain              $host_base_domain;
-        proxy_set_header   X-Forwarded-For            $remote_addr;
-        proxy_set_header   X-Forwarded-Proto          $scheme;
-        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
-        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
-        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
-        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+        include snippets/cptv-proxy.conf;
     }
 }
 
@@ -439,15 +416,7 @@ server {
     add_header Alt-Svc 'h3=":443"; ma=86400' always;
 
     location / {
-        proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host                       $host;
-        proxy_set_header   X-Base-Domain              $host_base_domain;
-        proxy_set_header   X-Forwarded-For            $remote_addr;
-        proxy_set_header   X-Forwarded-Proto          $scheme;
-        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
-        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
-        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
-        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+        include snippets/cptv-proxy.conf;
     }
 }
 ```
