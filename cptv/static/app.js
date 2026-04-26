@@ -433,38 +433,6 @@
     }
   }
 
-      try {
-        const resp = await fetch(url, {
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-        if (!resp.ok) {
-          cell.innerHTML = `<small>\u274c HTTP ${resp.status}</small>`;
-          continue;
-        }
-        const body = await resp.json();
-        // Prefer the browser's view of the negotiation. Falls back to
-        // what the server saw nginx negotiate.
-        let actual = null;
-        try {
-          const entry = performance.getEntriesByName(url)[0];
-          actual = entry?.nextHopProtocol || null;
-        } catch {
-          /* performance API missing or restricted */
-        }
-        const serverReported = expectedAlpnFor(body.http_version);
-        const got = actual || serverReported;
-        const ok = got === expected;
-        const label = got || "unknown";
-        cell.innerHTML = ok
-          ? `<small>\u2705 <code>${label}</code></small>`
-          : `<small>\u274c got <code>${label}</code></small>`;
-      } catch {
-        cell.innerHTML = "<small>\u274c unreachable</small>";
-      }
-    }
-  }
-
   // ---------- DNSSEC probe ----------
   // Loads an image from rhybar.cz (intentionally signed with an invalid
   // DNSSEC signature by CZ.NIC) and from a control host. If only the
