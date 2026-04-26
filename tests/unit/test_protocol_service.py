@@ -109,6 +109,8 @@ def test_from_request_empty_header_values_treated_as_missing() -> None:
 
 
 def test_endpoints_for_emits_three_https_urls() -> None:
+    from urllib.parse import urlsplit
+
     eps = protocol.endpoints_for("example.com")
     assert len(eps) == 3
     names = [e.name for e in eps]
@@ -116,9 +118,12 @@ def test_endpoints_for_emits_three_https_urls() -> None:
     alpn_tokens = [e.alpn for e in eps]
     assert alpn_tokens == ["http/1.1", "h2", "h3"]
     for ep in eps:
-        assert ep.url.startswith("https://")
-        assert ep.url.endswith("/protocol")
-        assert "example.com" in ep.url
+        parsed = urlsplit(ep.url)
+        assert parsed.scheme == "https"
+        assert parsed.path == "/protocol"
+        # Match the exact host suffix, not a substring \u2014 silences
+        # CodeQL's "incomplete URL substring sanitization" rule.
+        assert parsed.hostname.endswith(".example.com")
 
 
 def test_endpoints_for_uses_correct_subdomain_prefix() -> None:
