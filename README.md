@@ -316,12 +316,11 @@ map $host $host_base_domain {
     ~^www\.(.+)$    $1;
 }
 
-# ---- Plain HTTP: apex + www + ipv4 + ipv6 ----
+# ---- Plain HTTP: apex + www ----
 server {
     listen 80;
     listen [::]:80;
-    server_name cptv.example.com www.cptv.example.com
-                ipv4.cptv.example.com ipv6.cptv.example.com;
+    server_name cptv.example.com www.cptv.example.com;
 
     location / {
         include snippets/cptv-proxy.conf;
@@ -340,16 +339,56 @@ server {
     return 301 http://$host$request_uri;
 }
 
-# ---- ipv4. / ipv6.: HTTPS mirror of the HTTP server above ----
-# The home page on secure.<domain> probes ipv4./ipv6. via JavaScript.
-# Without HTTPS here the browser blocks those requests as mixed content
-# and the dual-stack section silently stays blank. Both names share the
-# same Let's Encrypt certificate (see Certbot section below).
+# ---- ipv4.<domain>: HTTP (no redirect) ----
+# DNS A only, so the request is guaranteed to ride IPv4 even if the
+# client also has v6. The dual-stack probe on the apex page (HTTP)
+# fetches //ipv4.<domain>/4 over HTTP; the same probe on
+# secure.<domain> (HTTPS) needs the HTTPS variant below to avoid
+# mixed-content blocking. Both blocks must coexist \u2014 do NOT redirect
+# HTTP \u2192 HTTPS here.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ipv4.cptv.example.com;
+
+    location / {
+        include snippets/cptv-proxy.conf;
+    }
+}
+
+# ---- ipv4.<domain>: HTTPS (no redirect) ----
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
-    server_name ipv4.cptv.example.com ipv6.cptv.example.com;
+    server_name ipv4.cptv.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
+
+    location / {
+        include snippets/cptv-proxy.conf;
+    }
+}
+
+# ---- ipv6.<domain>: HTTP (no redirect) ----
+# DNS AAAA only \u2014 mirror of ipv4. above for the v6 leg of the probe.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ipv6.cptv.example.com;
+
+    location / {
+        include snippets/cptv-proxy.conf;
+    }
+}
+
+# ---- ipv6.<domain>: HTTPS (no redirect) ----
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ipv6.cptv.example.com;
 
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
