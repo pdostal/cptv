@@ -46,6 +46,14 @@
         <td>DNS resolver classifier (<code>?resolver=…</code> optional)</td>
       </tr>
       <tr>
+        <td><code>/protocol</code></td>
+        <td>
+          Negotiated HTTP version, TLS version, ALPN. Hit
+          <code>https://http{1,2,3}.{{ domain }}/protocol</code> with
+          <code>curl --http1.1 / --http2 / --http3</code> to verify.
+        </td>
+      </tr>
+      <tr>
         <td><code>/traceroute</code></td>
         <td>Full traceroute, blocking</td>
       </tr>
@@ -102,6 +110,18 @@
       <code>secure.{{ domain }}</code> — TLS-enforced mirror of the apex
       (HTTPS only)
     </li>
+    <li>
+      <code>http1.{{ domain }}</code> — HTTPS pinned to HTTP/1.1 only
+      (ALPN <code>http/1.1</code>)
+    </li>
+    <li>
+      <code>http2.{{ domain }}</code> — HTTPS with HTTP/2 (ALPN
+      <code>h2</code>)
+    </li>
+    <li>
+      <code>http3.{{ domain }}</code> — HTTPS + HTTP/3 / QUIC (ALPN
+      <code>h3</code>, UDP/443)
+    </li>
   </ul>
   <p>
     <small
@@ -138,6 +158,11 @@ curl {{ domain }}/geoip                 # one section, plain text
 curl {{ domain }}/asn?format=json       # one section, JSON
 curl {{ domain }}/traceroute.txt        # blocking traceroute
 curl -I {{ domain }}/ip                 # see response headers
+
+curl --http1.1 https://http1.{{ domain }}/protocol   # verify HTTP/1.1
+curl --http2   https://http2.{{ domain }}/protocol   # verify HTTP/2
+curl --http3   https://http3.{{ domain }}/protocol   # verify HTTP/3 (QUIC)
+# /protocol prints: &lt;HTTP/x&gt;\t&lt;TLSvX.Y&gt;\t&lt;alpn&gt;\t&lt;encrypted|plain&gt;
 </code></pre>
 </article>
 {% endblock content %}

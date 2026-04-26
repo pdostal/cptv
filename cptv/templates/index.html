@@ -1,7 +1,8 @@
 {% extends "base.html" %} {% block title %}cptv — your connection{% endblock title %}
 {% block content %} {% set ip = data.ip %} {% set geo = data.geoip %} {% set asn
 = data.asn %} {% set dns = data.dns %} {% set timing = data.timing %} {% set
-http = data.http %} {% set quick_links = data.quick_links %}
+http = data.http %} {% set protocol = data.protocol %} {% set quick_links =
+data.quick_links %}
 
 {% set redirect = data.redirect_origin %}
 {% if redirect and redirect.looks_like_captive_portal %}
@@ -216,6 +217,61 @@ http = data.http %} {% set quick_links = data.quick_links %}
     >
       Dismiss
     </button>
+  </p>
+</article>
+
+<article id="protocol-section">
+  <header><strong>🔗 Connection Protocol</strong></header>
+  {# Server-rendered current protocol. Reads X-Forwarded-HTTP-Version,
+     X-Forwarded-TLS-Version, X-Forwarded-ALPN nginx headers (see
+     README.md "Protocol probes" section). Falls back to the ASGI
+     scope's http_version when running locally without nginx. #}
+  <p>
+    Connected via
+    <strong>{{ protocol.http_version }}</strong>
+    {% if protocol.tls_version %}
+    over <strong>{{ protocol.tls_version }}</strong>
+    {% elif not protocol.is_encrypted %}
+    <small>(plaintext)</small>
+    {% endif %}
+    {% if protocol.alpn %}
+    <small>ALPN: <code>{{ protocol.alpn }}</code></small>
+    {% endif %}
+  </p>
+
+  {# Capability table. The "Server" column is statically yes \u2014 we
+     wouldn't list the subdomain otherwise. The "Your client" column
+     is filled by detectProtocols() in app.js using
+     performance.getEntriesByName(url)[0].nextHopProtocol. #}
+  <table id="protocol-table">
+    <thead>
+      <tr>
+        <th scope="col">Endpoint</th>
+        <th scope="col">Server</th>
+        <th scope="col">Your client</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ep in protocol.endpoints %}
+      <tr data-protocol-row="{{ ep.alpn }}">
+        <td>
+          <code>{{ ep.url }}</code><br />
+          <small>{{ ep.name }}{% if ep.alpn == 'h3' %} (QUIC){% endif %}</small>
+        </td>
+        <td>✅</td>
+        <td data-protocol-probe="{{ ep.alpn }}"><small>…</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p>
+    <small
+      >curl users:
+      <code>curl --http2 https://http2.{{ data.meta.server }}/protocol</code>
+      (and <code>--http1.1</code> / <code>--http3</code>) to verify
+      negotiation directly. See <a href="/help">/help</a> for the full
+      list.</small
+    >
   </p>
 </article>
 

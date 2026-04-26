@@ -140,7 +140,18 @@ def test_aggregated_json_has_all_sections(client: TestClient):
     r = client.get("/", headers={**V4, "Accept": "application/json"})
     assert r.status_code == 200
     body = r.json()
-    for key in ("ip", "geoip", "asn", "dns", "timing", "http", "meta", "quick_links", "request"):
+    for key in (
+        "ip",
+        "geoip",
+        "asn",
+        "dns",
+        "timing",
+        "http",
+        "protocol",
+        "meta",
+        "quick_links",
+        "request",
+    ):
         assert key in body
     assert body["timing"]["server_timestamp"].endswith("Z")
     assert body["http"]["version"].startswith("HTTP/")

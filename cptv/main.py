@@ -18,6 +18,7 @@ from cptv.routes import health as health_routes
 from cptv.routes import help as help_routes
 from cptv.routes import index as index_routes
 from cptv.routes import ip as ip_routes
+from cptv.routes import protocol as protocol_routes
 from cptv.routes import traceroute as traceroute_routes
 from cptv.services.valkey import close_valkey
 
@@ -37,7 +38,7 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="cptv",
         description="CaPTiVe — self-hosted network diagnostics. See PLAN.md.",
-        version="0.1.11",
+        version="0.2.0",
         lifespan=lifespan,
     )
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     application.include_router(asn_routes._register(templates))
     application.include_router(dns_routes._register(templates))
     application.include_router(help_routes._register(templates))
+    application.include_router(protocol_routes._register(templates))
     application.include_router(index_routes._register(templates))
     application.include_router(traceroute_routes._register(templates))
 

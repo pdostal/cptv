@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 FWD_V4 = {"X-Forwarded-For": "203.0.113.42"}
@@ -53,13 +54,15 @@ def test_apex_host_returns_aggregated_not_single_stack(client: TestClient):
     # Aggregated text output includes the IP block + RTT line;
     # single-stack endpoints return just the bare IP.
     assert "RTT:" in r.text
-    # DNSSEC + Resolver + Time + Server + HTTP version deliberately
-    # absent from curl output (browser-only, or noise in scripts).
+    # The negotiated connection protocol IS shown to curl users (since
+    # it's directly relevant to their request). DNSSEC + Resolver + Time
+    # + Server are still suppressed (browser-only, or noise in scripts).
+    assert "Protocol:" in r.text
+    assert "HTTP/" in r.text
     assert "Resolver" not in r.text
     assert "DNSSEC" not in r.text
     assert "Time:" not in r.text
     assert "Server:" not in r.text
-    assert "HTTP:" not in r.text
 
 
 def test_subdomain_detection_ignores_port(client: TestClient):
@@ -99,6 +102,45 @@ def test_secure_subdomain_does_not_rewrite_root(client: TestClient):
     assert r.status_code == 200
     body = r.text
     assert 'id="ip-section"' in body, "should render full home page, not bare IP"
+
+
+@pytest.mark.parametrize("prefix", ["http1", "http2", "http3"])
+def test_protocol_subdomains_serve_full_home(client: TestClient, prefix: str) -> None:
+    """httpN.<domain>/ serves the full home page (no URL rewriting).
+
+    The subdomain only changes which HTTP version nginx negotiates;
+    the application response is identical to the apex.
+    """
+    r = client.get(
+        "/",
+        headers={
+            **FWD_V4,
+            **BASE_DOMAIN,
+            "Host": f"{prefix}.example.test",
+            "Accept": "text/html",
+        },
+    )
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="ip-section"' in body
+    assert 'id="protocol-section"' in body
+
+
+@pytest.mark.parametrize("prefix", ["http1", "http2", "http3"])
+def test_protocol_subdomains_expose_protocol_endpoint(client: TestClient, prefix: str) -> None:
+    """The /protocol endpoint is reachable on every httpN.<domain>."""
+    r = client.get(
+        "/protocol",
+        headers={
+            **FWD_V4,
+            **BASE_DOMAIN,
+            "Host": f"{prefix}.example.test",
+            "Accept": "application/json",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["http_version"].startswith("HTTP/")
 
 
 def test_secure_subdomain_brand_prefix_in_header(client: TestClient):

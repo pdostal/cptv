@@ -2,7 +2,7 @@
 
 Self-hosted, nerdy network diagnostics. Shows visitors detailed real-time info about their connection — IP, geolocation, ASN, DNS, traceroute, clock skew, DNSSEC validation.
 
-Served over plain HTTP on purpose so captive portals (hotel Wi-Fi, airport networks) can intercept and redirect it. The `secure.<domain>` prefix has TLS enforced; `ipv4.<domain>` and `ipv6.<domain>` are protocol-forcing endpoints reachable over both HTTP and HTTPS so the dual-stack probe works from either context.
+Served over plain HTTP on purpose so captive portals (hotel Wi-Fi, airport networks) can intercept and redirect it. The `secure.<domain>` prefix has TLS enforced; `ipv4.<domain>` and `ipv6.<domain>` are protocol-forcing endpoints reachable over both HTTP and HTTPS so the dual-stack probe works from either context. The `http1.<domain>`, `http2.<domain>`, and `http3.<domain>` subdomains are dedicated probes pinned to a single HTTP version via nginx ALPN, so `curl --http2 https://http2.<domain>/protocol` (and the matching `--http1.1` / `--http3` flags) verify protocol negotiation directly.
 
 The application is **domain-agnostic** — nothing about `cptv.cz` is hardcoded. The base domain is read from the `X-Base-Domain` nginx header at request time. See `PLAN.md` for the full specification.
 
@@ -278,10 +278,17 @@ server {
 
     location / {
         proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Base-Domain     $host_base_domain;
-        proxy_set_header   X-Forwarded-For   $remote_addr;
-        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Host                       $host;
+        proxy_set_header   X-Base-Domain              $host_base_domain;
+        proxy_set_header   X-Forwarded-For            $remote_addr;
+        proxy_set_header   X-Forwarded-Proto          $scheme;
+        # Connection-protocol info — uvicorn always sees HTTP/1.1 from
+        # the loopback hop, so the app reads these to populate
+        # data["protocol"] and the /protocol endpoint.
+        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
+        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
+        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
+        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
     }
 }
 
@@ -305,6 +312,7 @@ server {
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
+    http2 on;
     server_name ipv4.cptv.example.com ipv6.cptv.example.com;
 
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
@@ -312,10 +320,14 @@ server {
 
     location / {
         proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Base-Domain     $host_base_domain;
-        proxy_set_header   X-Forwarded-For   $remote_addr;
-        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Host                       $host;
+        proxy_set_header   X-Base-Domain              $host_base_domain;
+        proxy_set_header   X-Forwarded-For            $remote_addr;
+        proxy_set_header   X-Forwarded-Proto          $scheme;
+        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
+        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
+        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
+        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
     }
 }
 
@@ -332,6 +344,7 @@ server {
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
+    http2 on;
     server_name secure.cptv.example.com;
 
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
@@ -339,13 +352,112 @@ server {
 
     location / {
         proxy_pass         http://127.0.0.1:8000;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Base-Domain     $host_base_domain;
-        proxy_set_header   X-Forwarded-For   $remote_addr;
-        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Host                       $host;
+        proxy_set_header   X-Base-Domain              $host_base_domain;
+        proxy_set_header   X-Forwarded-For            $remote_addr;
+        proxy_set_header   X-Forwarded-Proto          $scheme;
+        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
+        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
+        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
+        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+    }
+}
+
+# ---- http1.<domain>: pin the connection to HTTP/1.1 only ----
+# `ssl_alpn http/1.1;` requires nginx >= 1.21.4. Clients that insist
+# on HTTP/2 or HTTP/3 in their ALPN list will fail the handshake; this
+# is the desired behaviour so curl --http2 demonstrably can't use this
+# subdomain.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    # NOTE: deliberately NO `http2 on;` here.
+    server_name http1.cptv.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
+    ssl_alpn http/1.1;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_set_header   Host                       $host;
+        proxy_set_header   X-Base-Domain              $host_base_domain;
+        proxy_set_header   X-Forwarded-For            $remote_addr;
+        proxy_set_header   X-Forwarded-Proto          $scheme;
+        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
+        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
+        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
+        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+    }
+}
+
+# ---- http2.<domain>: prefer HTTP/2 with HTTP/1.1 fallback ----
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name http2.cptv.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
+    ssl_alpn h2 http/1.1;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_set_header   Host                       $host;
+        proxy_set_header   X-Base-Domain              $host_base_domain;
+        proxy_set_header   X-Forwarded-For            $remote_addr;
+        proxy_set_header   X-Forwarded-Proto          $scheme;
+        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
+        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
+        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
+        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+    }
+}
+
+# ---- http3.<domain>: HTTP/3 (QUIC) with h2 + h1 fallback ----
+# Requires nginx >= 1.25 built with QUIC support (mainline nginx ships
+# this since 1.25.0; Debian/Ubuntu's stock nginx may not). Clients
+# discover h3 via the Alt-Svc header on prior responses.
+#
+# Firewall: open UDP/443 in addition to TCP/443 — HTTP/3 rides QUIC
+# over UDP. Without it the browser silently falls back to h2 and the
+# probe shows "❌ got h2".
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    listen 443 quic reuseport;
+    listen [::]:443 quic reuseport;
+    http2 on;
+    http3 on;
+    server_name http3.cptv.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
+    ssl_alpn h3 h2 http/1.1;
+
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_set_header   Host                       $host;
+        proxy_set_header   X-Base-Domain              $host_base_domain;
+        proxy_set_header   X-Forwarded-For            $remote_addr;
+        proxy_set_header   X-Forwarded-Proto          $scheme;
+        proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
+        proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
+        proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
+        proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
     }
 }
 ```
+
+### HTTP/3 / QUIC prerequisites
+
+- **nginx ≥ 1.25** built with QUIC support. Mainline nginx 1.25+ ships QUIC out of the box; older or distro-pinned builds may not. Check with `nginx -V 2>&1 | grep -o quic`.
+- **`ssl_alpn` directive** requires nginx ≥ 1.21.4. Without it the `http1.<domain>` ALPN pinning won't work and `curl --http2` will succeed against `http1.<domain>`.
+- **UDP/443 must be open** through host and cloud firewalls. HTTP/3 uses QUIC over UDP; without it the browser silently falls back to HTTP/2 and the capability table shows ❌.
+- **`Alt-Svc` advertisement** is what tells browsers "I also speak h3 here". The first request still uses h2; subsequent ones may upgrade. Cold reloads will look like h2 until the cache is warm.
 
 Enable the site:
 
@@ -371,13 +483,42 @@ certbot --nginx \
   -d www.cptv.example.com \
   -d secure.cptv.example.com \
   -d ipv4.cptv.example.com \
-  -d ipv6.cptv.example.com
+  -d ipv6.cptv.example.com \
+  -d http1.cptv.example.com \
+  -d http2.cptv.example.com \
+  -d http3.cptv.example.com
 
 # Verify auto-renewal timer is active
 systemctl status certbot.timer
 ```
 
 Certbot's nginx plugin will automatically update the `ssl_certificate` / `ssl_certificate_key` paths in your nginx config and set up a systemd timer for renewal.
+
+---
+
+## Protocol probes
+
+`/protocol` reports the negotiated HTTP version, TLS version, and ALPN token for the current connection. The home page renders a capability table that lights up which of the `httpN.<domain>` probes the user's browser successfully negotiated; curl users can hit each one directly:
+
+```sh
+curl --http1.1 https://http1.cptv.example.com/protocol
+# HTTP/1.1  TLSv1.3  http/1.1  encrypted
+
+curl --http2   https://http2.cptv.example.com/protocol
+# HTTP/2  TLSv1.3  h2  encrypted
+
+curl --http3   https://http3.cptv.example.com/protocol
+# HTTP/3  TLSv1.3  h3  encrypted
+```
+
+Output is a single tab-separated line — `cut -f1` pulls just the HTTP version. JSON (`?format=json` or `Accept: application/json`) and HTML formats are also available.
+
+If the capability table shows ❌ for a row, check (in order):
+
+1. The matching `httpN.<domain>` is reachable on TCP/443 (or UDP/443 for HTTP/3).
+2. nginx version supports the required directive (`ssl_alpn` ≥ 1.21.4, QUIC ≥ 1.25).
+3. For HTTP/3: UDP/443 is open through firewalls, and the `Alt-Svc` header is being advertised on prior responses.
+4. The browser actually supports HTTP/3 (Safari needs the experimental flag in some versions).
 
 ---
 
