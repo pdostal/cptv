@@ -5,7 +5,6 @@ from typing import Any
 from fastapi import APIRouter, Request, Response
 from fastapi.templating import Jinja2Templates
 
-from cptv.config import get_base_domain
 from cptv.negotiation import add_public_cors, respond
 from cptv.services import protocol as protocol_service
 
@@ -17,8 +16,6 @@ def _register(templates: Jinja2Templates) -> APIRouter:
     @router.get("/api/v1/protocol")
     def protocol(request: Request) -> Response:
         info = protocol_service.from_request(request)
-        base = get_base_domain(request)
-        endpoints = protocol_service.endpoints_for(base)
 
         json_data: dict[str, Any] = {
             "http_version": info.http_version,
@@ -26,7 +23,6 @@ def _register(templates: Jinja2Templates) -> APIRouter:
             "tls_cipher": info.tls_cipher,
             "alpn": info.alpn,
             "is_encrypted": info.is_encrypted,
-            "endpoints": [{"name": e.name, "url": e.url, "alpn": e.alpn} for e in endpoints],
         }
 
         # Tab-separated single line so shell scripts can `cut -f1` etc.

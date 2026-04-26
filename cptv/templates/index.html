@@ -223,9 +223,11 @@ data.quick_links %}
 <article id="protocol-section">
   <header><strong>🔗 Connection Protocol</strong></header>
   {# Server-rendered current protocol. Reads X-Forwarded-HTTP-Version,
-     X-Forwarded-TLS-Version, X-Forwarded-ALPN nginx headers (see
-     README.md "Protocol probes" section). Falls back to the ASGI
-     scope's http_version when running locally without nginx. #}
+     X-Forwarded-TLS-Version, X-Forwarded-ALPN nginx headers. Falls
+     back to the ASGI scope's http_version when running locally
+     without nginx. nginx's HTTP module has no per-vhost ALPN-pinning
+     directive, so we don't try to fan out to per-protocol probe
+     subdomains \u2014 see README "Connection Protocol" section. #}
   <p>
     Connected via
     <strong>{{ protocol.http_version }}</strong>
@@ -237,45 +239,6 @@ data.quick_links %}
     {% if protocol.alpn %}
     <small>ALPN: <code>{{ protocol.alpn }}</code></small>
     {% endif %}
-  </p>
-
-  {# Capability list. Server-side support is implicit \u2014 we wouldn't
-     list the subdomain otherwise. Each <span data-protocol-probe> is
-     filled by detectProtocols() in app.js using
-     performance.getEntriesByName(url)[0].nextHopProtocol. #}
-  <ul id="protocol-list">
-    {% for ep in protocol.endpoints %}
-    <li data-protocol-row="{{ ep.alpn }}">
-      <code>{{ ep.url }}</code>
-      <small>{{ ep.name }}{% if ep.alpn == 'h3' %} (QUIC){% endif %}</small>
-      \u2014 <span data-protocol-probe="{{ ep.alpn }}"><small>\u2026</small></span>
-    </li>
-    {% endfor %}
-  </ul>
-
-  {# Shown only when the page is loaded over plain HTTP. The probe
-     endpoints are HTTPS-only (HTTP/2 and HTTP/3 don't exist over
-     plaintext), so the browser would block the cross-origin fetch as
-     mixed content. Direct users at the secure mirror instead. #}
-  <p id="protocol-https-note" hidden>
-    <small
-      >\u26a0\ufe0f You're on plain HTTP \u2014 the HTTP/1.1, HTTP/2 and HTTP/3
-      probes are HTTPS-only and the browser blocks them as mixed
-      content. Visit
-      <a href="https://secure.{{ data.meta.server }}/"
-        >https://secure.{{ data.meta.server }}/</a
-      >
-      to run the probes.</small
-    >
-  </p>
-  <p>
-    <small
-      >curl users:
-      <code>curl --http2 https://http2.{{ data.meta.server }}/protocol</code>
-      (and <code>--http1.1</code> / <code>--http3</code>) to verify
-      negotiation directly. See <a href="/help">/help</a> for the full
-      list.</small
-    >
   </p>
 </article>
 

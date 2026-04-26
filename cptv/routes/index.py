@@ -55,7 +55,6 @@ def _collect(request: Request) -> dict:
     forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
 
     proto_info = protocol_service.from_request(request)
-    proto_endpoints = protocol_service.endpoints_for(domain)
 
     elapsed = elapsed_ms_so_far(request)
     rtt_ms = round(elapsed, 1) if elapsed is not None else None
@@ -113,7 +112,6 @@ def _collect(request: Request) -> dict:
             "tls_cipher": proto_info.tls_cipher,
             "alpn": proto_info.alpn,
             "is_encrypted": proto_info.is_encrypted,
-            "endpoints": [{"name": e.name, "url": e.url, "alpn": e.alpn} for e in proto_endpoints],
         },
         "redirect_origin": {
             "referrer": redirect.referrer,
