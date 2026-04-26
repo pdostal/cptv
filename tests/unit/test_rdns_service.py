@@ -23,10 +23,25 @@ async def test_lookup_none_returns_none() -> None:
 
 
 @pytest.mark.asyncio
-async def test_lookup_private_skipped() -> None:
-    """RFC1918 PTR is rarely useful and leaks DNS queries; service skips it."""
-    addr = ipaddress.ip_address("192.168.1.1")
-    assert await rdns.lookup(addr) is None
+async def test_lookup_private_resolves_when_resolver_answers() -> None:
+    """Self-hosted deployments often have a local resolver answering for
+    RFC1918 PTRs (e.g. silver.local for 192.168.x.x). Don't short-circuit."""
+    addr = ipaddress.ip_address("192.168.1.71")
+    with patch("dns.asyncresolver.Resolver") as resolver_cls:
+        instance = resolver_cls.return_value
+        instance.resolve = AsyncMock(return_value=_fake_answer("silver.local."))
+        result = await rdns.lookup(addr)
+    assert result == "silver.local"
+
+
+@pytest.mark.asyncio
+async def test_lookup_private_returns_none_when_resolver_says_nxdomain() -> None:
+    """Private IP with no local PTR zone => NXDOMAIN => None (no error)."""
+    addr = ipaddress.ip_address("192.168.99.99")
+    with patch("dns.asyncresolver.Resolver") as resolver_cls:
+        instance = resolver_cls.return_value
+        instance.resolve = AsyncMock(side_effect=dns.resolver.NXDOMAIN)
+        assert await rdns.lookup(addr) is None
 
 
 def _fake_answer(name: str) -> list:
