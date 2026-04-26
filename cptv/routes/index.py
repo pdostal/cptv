@@ -13,6 +13,7 @@ from cptv.services import clock as clock_service
 from cptv.services import dns as dns_service
 from cptv.services import geoip as geoip_service
 from cptv.services import ip as ip_service
+from cptv.services import protocol as protocol_service
 from cptv.services import redirect_origin as redirect_origin_service
 
 router = APIRouter()
@@ -52,6 +53,9 @@ def _collect(request: Request) -> dict:
 
     http_version = request.scope.get("http_version") or "1.1"
     forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+
+    proto_info = protocol_service.from_request(request)
+    proto_endpoints = protocol_service.endpoints_for(domain)
 
     elapsed = elapsed_ms_so_far(request)
     rtt_ms = round(elapsed, 1) if elapsed is not None else None
@@ -101,6 +105,16 @@ def _collect(request: Request) -> dict:
             "protocol": forwarded_proto,
             "referrer": request.headers.get("referer"),
         },
+        # Richer view of the connection protocol; data["http"] stays as
+        # a short alias for shell scripts. See cptv/services/protocol.py.
+        "protocol": {
+            "http_version": proto_info.http_version,
+            "tls_version": proto_info.tls_version,
+            "tls_cipher": proto_info.tls_cipher,
+            "alpn": proto_info.alpn,
+            "is_encrypted": proto_info.is_encrypted,
+            "endpoints": [{"name": e.name, "url": e.url, "alpn": e.alpn} for e in proto_endpoints],
+        },
         "redirect_origin": {
             "referrer": redirect.referrer,
             "referrer_host": redirect.referrer_host,
@@ -122,24 +136,42 @@ def _text_aggregated(data: dict) -> str:
     """Plain-text aggregated output for curl users.
 
     Skips DNSSEC, Resolver and the server-side timestamp (browser-only
-    or not useful in scripts), HTTP version, and the Server identity
-    line (visible to anyone who already knows where they sent the
-    request). Keeps IP, GeoIP, ASN, and the RTT diagnostic.
+    or not useful in scripts) and the Server identity line (visible to
+    anyone who already knows where they sent the request). Keeps IP,
+    GeoIP, ASN, the negotiated connection protocol, and the RTT
+    diagnostic.
+
+    The per-protocol probe URLs (https://http{1,2,3}.<base>/protocol)
+    are NOT listed here \u2014 curl users learn about them from /help.
     """
     ip = data["ip"]
     geo = data["geoip"]
     asn = data["asn"]
+    conn = data["protocol"]
 
     lines: list[str] = []
 
     current = ip["current"] or "unknown"
-    proto = ip["protocol"] or ""
-    suffix = f"  ({proto}, preferred)" if proto else ""
+    ip_proto = ip["protocol"] or ""
+    suffix = f"  ({ip_proto}, preferred)" if ip_proto else ""
     lines.append(f"🌐 IP:        {current}{suffix}")
     if ip["ipv4"] and ip["protocol"] != "IPv4":
         lines.append(f"   IPv4:      {ip['ipv4']}")
     if ip["ipv6"] and ip["protocol"] != "IPv6":
         lines.append(f"   IPv6:      {ip['ipv6']}")
+    lines.append("")
+
+    # Connection protocol \u2014 always emitted; users can compare
+    # by hitting `curl --http2 https://http2.<base>/protocol` etc.
+    parts: list[str] = [conn["http_version"]]
+    extras: list[str] = []
+    if conn["tls_version"]:
+        extras.append(conn["tls_version"])
+    if conn["alpn"]:
+        extras.append(f"ALPN {conn['alpn']}")
+    if extras:
+        parts.append(f"({', '.join(extras)})")
+    lines.append(f"🔗 Protocol:  {' '.join(parts)}")
     lines.append("")
 
     if geo:
