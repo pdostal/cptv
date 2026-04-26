@@ -7,7 +7,7 @@ dependencies = [
     "fastapi>=0.136.0",
     "geoip2>=5.2.0",
     "jinja2>=3.1.6",
-    "pydantic-settings>=2.13.1",
+    "pydantic-settings>=2.14.0",
     "uvicorn[standard]>=0.44.0",
     "redis[hiredis]>=5.0",
 ]
