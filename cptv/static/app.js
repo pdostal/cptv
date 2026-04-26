@@ -90,14 +90,7 @@
   // domain. Used by the dual-stack probe, the geolocation deep link,
   // and the per-protocol probe. Keep this list in sync with
   // SUBDOMAIN_PREFIXES in cptv/middleware.py.
-  const KNOWN_SUBDOMAIN_PREFIXES = [
-    "ipv4",
-    "ipv6",
-    "secure",
-    "http1",
-    "http2",
-    "http3",
-  ];
+  const KNOWN_SUBDOMAIN_PREFIXES = ["ipv4", "ipv6", "secure"];
   function getBaseDomain() {
     const host = window.location.hostname || "";
     const parts = host.split(".");
@@ -343,94 +336,6 @@
 
     // Hand the freshly-fetched per-stack info to the history tracker.
     return { geo, asn };
-  }
-
-  // ---------- per-protocol detection ----------
-  // For each httpN.<base>/protocol endpoint, fetch and check whether the
-  // browser actually negotiated the expected HTTP version. The most
-  // reliable signal is performance.getEntriesByName(url)[0].nextHopProtocol
-  // \u2014 it tells us what THE BROWSER used, not what the server reports.
-  // We fall back to the JSON's http_version field if the perf entry is
-  // missing (some browsers / extensions strip it).
-  function expectedAlpnFor(httpVersion) {
-    // Map server-reported HTTP version to the ALPN token the browser's
-    // nextHopProtocol would report.
-    if (!httpVersion) return null;
-    const v = httpVersion.toUpperCase();
-    if (v.startsWith("HTTP/3")) return "h3";
-    if (v.startsWith("HTTP/2")) return "h2";
-    if (v.startsWith("HTTP/1")) return "http/1.1";
-    return null;
-  }
-
-  async function detectProtocols() {
-    const cells = document.querySelectorAll("[data-protocol-probe]");
-    if (!cells.length) return;
-    const host = window.location.hostname;
-    if (!host || host === "localhost" || host === "127.0.0.1") return;
-
-    // The probe endpoints are HTTPS-only (HTTP/2 and HTTP/3 don't exist
-    // over plaintext, and forcing HTTPS on http1.<base> too keeps
-    // semantics symmetrical). From an http:// page the browser would
-    // block them all as mixed content, so swap the list for a single
-    // explanatory note that points at secure.<base>.
-    if (window.location.protocol === "http:") {
-      const list = qs("#protocol-list");
-      const note = qs("#protocol-https-note");
-      if (list) list.hidden = true;
-      if (note) note.hidden = false;
-      return;
-    }
-
-    const base = getBaseDomain();
-
-    for (const cell of cells) {
-      const expected = cell.getAttribute("data-protocol-probe");
-      if (!expected) continue;
-      const prefixMatch = ["http/1.1", "h2", "h3"].indexOf(expected);
-      if (prefixMatch === -1) continue;
-      const prefix = ["http1", "http2", "http3"][prefixMatch];
-      const url = `https://${prefix}.${base}/protocol`;
-
-      try {
-        const resp = await fetch(url, {
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-        if (!resp.ok) {
-          // 404 most often means the httpN.<base> server block isn't
-          // configured in nginx, the cert doesn't cover it, or DNS
-          // is missing. Don't try to parse a body in that case.
-          const hint =
-            resp.status === 404
-              ? "endpoint not configured"
-              : `HTTP ${resp.status}`;
-          cell.innerHTML = `<small>\u274c ${hint}</small>`;
-          continue;
-        }
-        const body = await resp.json();
-        // Prefer the browser's view of the negotiation. Falls back to
-        // what the server saw nginx negotiate.
-        let actual = null;
-        try {
-          const entry = performance.getEntriesByName(url)[0];
-          actual = entry?.nextHopProtocol || null;
-        } catch {
-          /* performance API missing or restricted */
-        }
-        const serverReported = expectedAlpnFor(body.http_version);
-        const got = actual || serverReported;
-        const ok = got === expected;
-        const label = got || "unknown";
-        cell.innerHTML = ok
-          ? `<small>\u2705 <code>${label}</code></small>`
-          : `<small>\u274c got <code>${label}</code></small>`;
-      } catch {
-        // Network error / DNS / TLS handshake failure / CORS preflight
-        // refusal all land here.
-        cell.innerHTML = "<small>\u274c unreachable</small>";
-      }
-    }
   }
 
   // ---------- DNSSEC probe ----------
@@ -1086,8 +991,5 @@
     const enriched = await enrichDualStackInfo();
     trackHistory(enriched);
     wireTracerouteWhenStacksKnown();
-    // Per-protocol probe runs last because it's purely informational
-    // and shouldn't block the rest of the page coming alive.
-    detectProtocols();
   });
 })();

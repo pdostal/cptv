@@ -26,11 +26,8 @@ def test_protocol_json_default_local() -> None:
     assert body["tls_version"] is None
     assert body["alpn"] is None
     assert body["is_encrypted"] is False
-    # endpoints list always present
-    assert isinstance(body["endpoints"], list)
-    assert len(body["endpoints"]) == 3
-    alpn_tokens = {e["alpn"] for e in body["endpoints"]}
-    assert alpn_tokens == {"http/1.1", "h2", "h3"}
+    # No 'endpoints' key \u2014 the per-protocol probe was removed in v0.3.0.
+    assert "endpoints" not in body
 
 
 def test_protocol_reads_nginx_headers(client: TestClient) -> None:
@@ -99,9 +96,9 @@ def test_protocol_html_renders_via_section_stub(client: TestClient) -> None:
 
 
 def test_protocol_has_public_cors(client: TestClient) -> None:
-    """The home page's detectProtocols() probe fetches this endpoint
-    cross-origin from each httpN.<base> domain. Without wildcard CORS
-    the browser silently drops the response body."""
+    """Wildcard CORS is kept even though no JS probe consumes it now \u2014
+    the endpoint may still be hit cross-origin by user scripts and
+    the response is public, idempotent, contains no secrets."""
     r = client.get("/protocol", headers={**V4, "Accept": "application/json"})
     assert r.headers.get("access-control-allow-origin") == "*"
 
@@ -121,15 +118,14 @@ def test_aggregated_json_includes_protocol_block(client: TestClient) -> None:
     body = r.json()
     assert "protocol" in body
     assert "http_version" in body["protocol"]
-    assert "endpoints" in body["protocol"]
-    assert len(body["protocol"]["endpoints"]) == 3
+    # No 'endpoints' key \u2014 dropped in v0.3.0 along with httpN. probes.
+    assert "endpoints" not in body["protocol"]
     # Existing data["http"].version still present (compat alias).
     assert body["http"]["version"].startswith("HTTP/")
 
 
 def test_aggregated_text_includes_protocol_line(client: TestClient) -> None:
-    """Curl users see the negotiated protocol on every page, even though
-    they can't run the JS capability probe."""
+    """Curl users see the negotiated protocol on every page."""
     r = client.get("/", headers={**V4, **CURL})
     assert r.status_code == 200
     assert "🔗 Protocol:" in r.text
@@ -140,11 +136,11 @@ def test_aggregated_html_includes_protocol_section(client: TestClient) -> None:
     r = client.get("/", headers={**V4, "Accept": "text/html"})
     assert r.status_code == 200
     assert 'id="protocol-section"' in r.text
-    assert 'id="protocol-list"' in r.text
-    # The mixed-content note exists in the DOM (hidden by default;
-    # app.js reveals it when window.location.protocol === 'http:').
-    assert 'id="protocol-https-note"' in r.text
-    # All three probe rows are present.
-    assert 'data-protocol-probe="http/1.1"' in r.text
-    assert 'data-protocol-probe="h2"' in r.text
-    assert 'data-protocol-probe="h3"' in r.text
+    # SSR 'Connected via ...' line is the entire body of the section now.
+    assert "Connected via" in r.text
+    # The per-protocol probe was removed in v0.3.0; the probe markers
+    # MUST be gone so app.js (which doesn't query for them anymore)
+    # stays consistent with the DOM.
+    assert "protocol-list" not in r.text
+    assert "protocol-https-note" not in r.text
+    assert "data-protocol-probe" not in r.text

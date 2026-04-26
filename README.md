@@ -2,7 +2,7 @@
 
 Self-hosted, nerdy network diagnostics. Shows visitors detailed real-time info about their connection — IP, geolocation, ASN, DNS, traceroute, clock skew, DNSSEC validation.
 
-Served over plain HTTP on purpose so captive portals (hotel Wi-Fi, airport networks) can intercept and redirect it. The `secure.<domain>` prefix has TLS enforced; `ipv4.<domain>` and `ipv6.<domain>` are protocol-forcing endpoints reachable over both HTTP and HTTPS so the dual-stack probe works from either context. The `http1.<domain>`, `http2.<domain>`, and `http3.<domain>` subdomains are dedicated probes pinned to a single HTTP version via nginx ALPN, so `curl --http2 https://http2.<domain>/protocol` (and the matching `--http1.1` / `--http3` flags) verify protocol negotiation directly.
+Served over plain HTTP on purpose so captive portals (hotel Wi-Fi, airport networks) can intercept and redirect it. The `secure.<domain>` prefix has TLS enforced; `ipv4.<domain>` and `ipv6.<domain>` are protocol-forcing endpoints reachable over both HTTP and HTTPS so the dual-stack probe works from either context. Hit `https://secure.<domain>/protocol` with `curl --http1.1 / --http2 / --http3` to probe what your client can negotiate against an h1 + h2 + h3 capable server.
 
 The application is **domain-agnostic** — nothing about `cptv.cz` is hardcoded. The base domain is read from the `X-Base-Domain` nginx header at request time. See `PLAN.md` for the full specification.
 
@@ -20,9 +20,8 @@ The application is **domain-agnostic** — nothing about `cptv.cz` is hardcoded.
 - [nginx reverse proxy](#nginx-reverse-proxy)
   - [`/etc/nginx/snippets/cptv-proxy.conf`](#etcnginxsnippetscptv-proxyconf)
   - [`/etc/nginx/sites-available/cptv.conf`](#etcnginxsites-availablecptvconf)
-  - [HTTP/3 / QUIC prerequisites](#http3--quic-prerequisites)
 - [Certbot (nginx plugin)](#certbot-nginx-plugin)
-- [Protocol probes](#protocol-probes)
+- [Connection protocol probe](#connection-protocol-probe)
 - [Building locally](#building-locally)
   - [Running Valkey locally for development](#running-valkey-locally-for-development)
   - [Building the container image](#building-the-container-image)
@@ -379,72 +378,24 @@ server {
     return 301 https://$host$request_uri;
 }
 
-# ---- secure.<domain>: HTTPS (TLS enforced) ----
-server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
-    server_name secure.cptv.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
-
-    location / {
-        include snippets/cptv-proxy.conf;
-    }
-}
-
-# ---- http1.<domain>: server only speaks HTTP/1.1 ----
-# No `http2 on;` and no `quic` listener, so nginx advertises only
-# http/1.1 in ALPN. There is no HTTP-module ALPN-pinning directive in
-# nginx (`ssl_alpn` is stream-only), so a client that explicitly asks
-# for HTTP/1.1 against http2.<domain> will still succeed at HTTP/1.1.
-# The capability table reports what was negotiated, not what was
-# enforced \u2014 see "Protocol probes" below.
-server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    # NOTE: deliberately NO `http2 on;` here.
-    server_name http1.cptv.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
-
-    location / {
-        include snippets/cptv-proxy.conf;
-    }
-}
-
-# ---- http2.<domain>: HTTP/2 enabled (h2 + http/1.1 in ALPN) ----
-server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
-    server_name http2.cptv.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
-
-    location / {
-        include snippets/cptv-proxy.conf;
-    }
-}
-
-# ---- http3.<domain>: HTTP/3 (QUIC) + HTTP/2 + HTTP/1.1 ----
-# Requires nginx >= 1.25 built with QUIC support (mainline nginx ships
-# this since 1.25.0; Debian/Ubuntu's stock nginx may not). Clients
-# discover h3 via the Alt-Svc header on prior responses.
+# ---- secure.<domain>: HTTPS + HTTP/2 + HTTP/3 (TLS enforced) ----
+# This is where the /protocol endpoint lives. Negotiating up to HTTP/3
+# here lets `curl --http3 https://secure.<domain>/protocol` work.
+#
+# Requires nginx >= 1.25 built with `--with-http_v3_module`. Verify
+# with `nginx -V 2>&1 | tr ' ' '\n' | grep http_v3`. If the module
+# isn't built, drop the two `listen ... quic` lines and the
+# Alt-Svc header — h2 + h1 still work.
 #
 # Firewall: open UDP/443 in addition to TCP/443 — HTTP/3 rides QUIC
-# over UDP. Without it the browser silently falls back to h2 and the
-# probe shows "❌ got h2".
+# over UDP. Without it browsers silently fall back to h2.
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
     listen 443 quic reuseport;
     listen [::]:443 quic reuseport;
     http2 on;
-    server_name http3.cptv.example.com;
+    server_name secure.cptv.example.com;
 
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
@@ -457,12 +408,13 @@ server {
 }
 ```
 
-### HTTP/3 / QUIC prerequisites
+### About per-protocol probe subdomains
 
-- **nginx ≥ 1.25 built with `--with-http_v3_module`.** Mainline nginx 1.25+ ships QUIC, but `ngx_http_v3_module` has to be compiled in. Check with `nginx -V 2>&1 | tr ' ' '\n' | grep -E 'http_v3|quic'`. If your build lacks the module, `listen ... quic` will fail with `unknown directive`. The directive `http3 on;` itself is the default and unnecessary in the config \u2014 `listen ... quic` is what actually activates HTTP/3.
-- **No HTTP-module ALPN pinning.** nginx's HTTP module has no `ssl_alpn` directive (it lives in the stream module only), so the `httpN.<domain>` probes restrict the protocols nginx *advertises* via the listener-level `http2 on;` toggle and the `quic` listen parameter, not via ALPN whitelist. A client that explicitly downgrades (e.g. `curl --http1.1 https://http2.<domain>`) will succeed at the lower version. The capability table reports what was *negotiated*, not what was forced.
-- **UDP/443 must be open** through host and cloud firewalls. HTTP/3 uses QUIC over UDP; without it the browser silently falls back to HTTP/2 and the capability table shows ❌.
-- **`Alt-Svc` advertisement** is what tells browsers "I also speak h3 here". The first request still uses h2; subsequent ones may upgrade. Cold reloads will look like h2 until the cache is warm.
+Earlier releases (v0.2.0 – v0.2.8) advertised three extra subdomains — `http1.<domain>`, `http2.<domain>`, `http3.<domain>` — pinned to a single HTTP version each so a JS capability check could test each protocol independently. **They have been removed.**
+
+The reason: nginx's HTTP module has no per-vhost ALPN-pinning directive. `ssl_alpn` exists only in the `stream` module. The closest substitutes — listener-level `http2 on;` and the `quic` listen parameter — control what nginx *advertises*, not what's *enforced*: a client that explicitly downgrades (`curl --http1.1 https://http2.<domain>`) succeeds at the lower version. The "capability" probe was therefore reporting what the client + server *happened to negotiate*, which is exactly what `https://secure.<domain>/protocol` already reports for the current connection.
+
+Maintaining three near-identical subdomains, three certificate SANs, and a JS cross-origin probe to surface that same information was net negative. The current approach: one HTTPS host (`secure.<domain>`) that speaks all three protocols, and `curl --http1.1 / --http2 / --http3 https://secure.<domain>/protocol` for users who want to compare.
 
 Enable the site:
 
@@ -488,10 +440,7 @@ certbot --nginx \
   -d www.cptv.example.com \
   -d secure.cptv.example.com \
   -d ipv4.cptv.example.com \
-  -d ipv6.cptv.example.com \
-  -d http1.cptv.example.com \
-  -d http2.cptv.example.com \
-  -d http3.cptv.example.com
+  -d ipv6.cptv.example.com
 
 # Verify auto-renewal timer is active
 systemctl status certbot.timer
@@ -501,30 +450,29 @@ Certbot's nginx plugin will automatically update the `ssl_certificate` / `ssl_ce
 
 ---
 
-## Protocol probes
+## Connection protocol probe
 
-`/protocol` reports the negotiated HTTP version, TLS version, and ALPN token for the current connection. The home page renders a capability table that lights up which of the `httpN.<domain>` probes the user's browser successfully negotiated; curl users can hit each one directly:
+`/protocol` reports the negotiated HTTP version, TLS version, and ALPN token for the current connection. The home page renders a one-line summary (`Connected via HTTP/2 over TLSv1.3 (ALPN: h2)`) and curl users can compare protocols against the same `secure.<domain>` host:
 
 ```sh
-curl --http1.1 https://http1.cptv.example.com/protocol
+curl --http1.1 https://secure.cptv.example.com/protocol
 # HTTP/1.1  TLSv1.3  http/1.1  encrypted
 
-curl --http2   https://http2.cptv.example.com/protocol
+curl --http2   https://secure.cptv.example.com/protocol
 # HTTP/2  TLSv1.3  h2  encrypted
 
-curl --http3   https://http3.cptv.example.com/protocol
+curl --http3   https://secure.cptv.example.com/protocol
 # HTTP/3  TLSv1.3  h3  encrypted
 ```
 
 Output is a single tab-separated line — `cut -f1` pulls just the HTTP version. JSON (`?format=json` or `Accept: application/json`) and HTML formats are also available.
 
-If the capability table shows ❌ for a row, check (in order):
+If `--http3` reports `h2` instead of `h3`, check (in order):
 
-1. The matching `httpN.<domain>` is reachable on TCP/443 (or UDP/443 for HTTP/3).
-2. nginx version supports the required listener directive (`http2 on;` since 1.25.1, `quic` listen parameter since 1.25.0 with `--with-http_v3_module`).
-3. For HTTP/3: UDP/443 is open through firewalls, and the `Alt-Svc` header is being advertised on prior responses.
+1. nginx was built with `--with-http_v3_module` (`nginx -V 2>&1 | tr ' ' '\n' | grep http_v3`).
+2. UDP/443 is open through host and cloud firewalls — HTTP/3 rides QUIC over UDP.
+3. The `Alt-Svc` header is being advertised on prior responses (cold reload looks like h2 until the cache is warm).
 4. The browser actually supports HTTP/3 (Safari needs the experimental flag in some versions).
-5. Note that the probe shows what was *negotiated*. A client that explicitly downgrades (e.g. `curl --http1.1 https://http2.<domain>`) will report `http/1.1` here \u2014 not a server bug.
 
 ---
 

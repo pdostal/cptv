@@ -14,15 +14,6 @@ ALPN_HEADER = "x-forwarded-alpn"  # $ssl_alpn_protocol
 
 
 @dataclass(frozen=True)
-class ProtocolEndpoint:
-    """One per-protocol probe endpoint advertised to the client."""
-
-    name: str  # human-readable, e.g. "HTTP/2"
-    url: str  # full URL the JS probe / curl hits
-    alpn: str  # ALPN token: "http/1.1", "h2", "h3"
-
-
-@dataclass(frozen=True)
 class ConnectionProtocol:
     http_version: str  # normalised: "HTTP/1.1" | "HTTP/2" | "HTTP/3"
     tls_version: str | None  # "TLSv1.3" | "TLSv1.2" | None for plain http
@@ -72,30 +63,3 @@ def from_request(request: Request) -> ConnectionProtocol:
         alpn=headers.get(ALPN_HEADER) or None,
         is_encrypted=fwd_proto == "https",
     )
-
-
-# Canonical list of per-protocol probe subdomains. Order matters: it
-# determines column order in the capability table and the listing order
-# in /help.
-PROTOCOL_SUBDOMAINS: tuple[tuple[str, str, str], ...] = (
-    ("http1", "HTTP/1.1", "http/1.1"),
-    ("http2", "HTTP/2", "h2"),
-    ("http3", "HTTP/3", "h3"),
-)
-
-
-def endpoints_for(base_domain: str) -> list[ProtocolEndpoint]:
-    """Build the list of per-protocol probe endpoints for a base domain.
-
-    The URL always uses https:// because nginx pins each httpN.<base> to
-    HTTPS — HTTP/2 and HTTP/3 are TLS-only on the wire, and forcing
-    HTTPS on http1.<base> too keeps the probe semantics symmetrical.
-    """
-    return [
-        ProtocolEndpoint(
-            name=name,
-            url=f"https://{prefix}.{base_domain}/protocol",
-            alpn=alpn,
-        )
-        for prefix, name, alpn in PROTOCOL_SUBDOMAINS
-    ]

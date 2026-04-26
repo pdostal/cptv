@@ -23,7 +23,7 @@ ENDPOINTS
     /asn                   ASN, operator name, prefix, looking-glass URL
     /isp                   "<name> (AS<n>)" (bare value, scriptable)
     /dns                   DNS resolver classifier (?resolver=… optional)
-    /protocol              Negotiated HTTP/TLS/ALPN for the current connection
+    /protocol              Negotiated HTTP version, TLS version, ALPN
     /traceroute            Full traceroute, blocking
     /traceroute.json       Same, JSON only
     /traceroute.txt        Same, plain text only
@@ -39,9 +39,6 @@ SUBDOMAINS
     ipv4.{domain}           DNS A only — forces IPv4 (HTTP + HTTPS)
     ipv6.{domain}           DNS AAAA only — forces IPv6 (HTTP + HTTPS)
     secure.{domain}         TLS-enforced mirror of the apex (HTTPS only)
-    http1.{domain}          HTTPS, server only speaks HTTP/1.1
-    http2.{domain}          HTTPS with HTTP/2 enabled
-    http3.{domain}          HTTPS + HTTP/3 / QUIC (UDP/443)
 
 FORMAT NEGOTIATION
     Each endpoint speaks three formats. Pick one:
@@ -63,9 +60,9 @@ EXAMPLES
     curl {domain}/traceroute.txt         # blocking traceroute
     curl -I {domain}/ip                  # response headers
 
-    curl --http1.1 https://http1.{domain}/protocol   # verify HTTP/1.1
-    curl --http2   https://http2.{domain}/protocol   # verify HTTP/2
-    curl --http3   https://http3.{domain}/protocol   # verify HTTP/3 (QUIC)
+    curl --http1.1 https://secure.{domain}/protocol  # force HTTP/1.1
+    curl --http2   https://secure.{domain}/protocol  # force HTTP/2
+    curl --http3   https://secure.{domain}/protocol  # force HTTP/3 (QUIC)
     # /protocol prints: <HTTP/x>\\t<TLSvX.Y>\\t<alpn>\\t<encrypted|plain>
 """
 

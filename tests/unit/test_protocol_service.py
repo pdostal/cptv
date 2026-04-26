@@ -103,32 +103,3 @@ def test_from_request_empty_header_values_treated_as_missing() -> None:
     info = protocol.from_request(req)
     assert info.tls_version is None
     assert info.alpn is None
-
-
-# ---------- endpoints_for ----------
-
-
-def test_endpoints_for_emits_three_https_urls() -> None:
-    from urllib.parse import urlsplit
-
-    eps = protocol.endpoints_for("example.com")
-    assert len(eps) == 3
-    names = [e.name for e in eps]
-    assert names == ["HTTP/1.1", "HTTP/2", "HTTP/3"]
-    alpn_tokens = [e.alpn for e in eps]
-    assert alpn_tokens == ["http/1.1", "h2", "h3"]
-    for ep in eps:
-        parsed = urlsplit(ep.url)
-        assert parsed.scheme == "https"
-        assert parsed.path == "/protocol"
-        # Match the exact host suffix, not a substring \u2014 silences
-        # CodeQL's "incomplete URL substring sanitization" rule.
-        assert parsed.hostname.endswith(".example.com")
-
-
-def test_endpoints_for_uses_correct_subdomain_prefix() -> None:
-    eps = protocol.endpoints_for("cptv.cz")
-    urls = {e.alpn: e.url for e in eps}
-    assert urls["http/1.1"] == "https://http1.cptv.cz/protocol"
-    assert urls["h2"] == "https://http2.cptv.cz/protocol"
-    assert urls["h3"] == "https://http3.cptv.cz/protocol"

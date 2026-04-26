@@ -49,8 +49,9 @@
         <td><code>/protocol</code></td>
         <td>
           Negotiated HTTP version, TLS version, ALPN. Hit
-          <code>https://http{1,2,3}.{{ domain }}/protocol</code> with
-          <code>curl --http1.1 / --http2 / --http3</code> to verify.
+          <code>https://secure.{{ domain }}/protocol</code> with
+          <code>curl --http1.1 / --http2 / --http3</code> to compare
+          what your client can negotiate.
         </td>
       </tr>
       <tr>
@@ -110,16 +111,7 @@
       <code>secure.{{ domain }}</code> — TLS-enforced mirror of the apex
       (HTTPS only)
     </li>
-    <li>
-      <code>http1.{{ domain }}</code> — HTTPS, server only speaks
-      HTTP/1.1 (no <code>http2 on;</code>)
-    </li>
-    <li>
-      <code>http2.{{ domain }}</code> — HTTPS with HTTP/2 enabled
-    </li>
-    <li>
-      <code>http3.{{ domain }}</code> — HTTPS + HTTP/3 / QUIC (UDP/443)
-    </li>
+
   </ul>
   <p>
     <small
@@ -157,9 +149,9 @@ curl {{ domain }}/asn?format=json       # one section, JSON
 curl {{ domain }}/traceroute.txt        # blocking traceroute
 curl -I {{ domain }}/ip                 # see response headers
 
-curl --http1.1 https://http1.{{ domain }}/protocol   # verify HTTP/1.1
-curl --http2   https://http2.{{ domain }}/protocol   # verify HTTP/2
-curl --http3   https://http3.{{ domain }}/protocol   # verify HTTP/3 (QUIC)
+curl --http1.1 https://secure.{{ domain }}/protocol  # force HTTP/1.1
+curl --http2   https://secure.{{ domain }}/protocol  # force HTTP/2
+curl --http3   https://secure.{{ domain }}/protocol  # force HTTP/3 (QUIC)
 # /protocol prints: &lt;HTTP/x&gt;\t&lt;TLSvX.Y&gt;\t&lt;alpn&gt;\t&lt;encrypted|plain&gt;
 </code></pre>
 </article>

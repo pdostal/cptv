@@ -8,17 +8,13 @@ from starlette.responses import Response
 
 from cptv.config import BASE_DOMAIN_HEADER, get_settings
 
-# Prefixes the middleware will tag on request.state.subdomain. ``secure`` and
-# the ``httpN`` family are included so templates can brand the header even
-# though we never rewrite the path for them.
-#
-# The ``http1`` / ``http2`` / ``http3`` subdomains are dedicated probes for
-# specific HTTP versions: nginx pins each to its protocol via ALPN /
-# listener directives so curl --http2/--http3 can verify negotiation.
-SUBDOMAIN_PREFIXES = ("ipv4", "ipv6", "secure", "http1", "http2", "http3")
+# Prefixes the middleware will tag on request.state.subdomain. ``secure`` is
+# included so templates can brand the header even though we never rewrite
+# the path for it.
+SUBDOMAIN_PREFIXES = ("ipv4", "ipv6", "secure")
 # Subset of SUBDOMAIN_PREFIXES whose root path "/" is rewritten to /<prefix>
-# so curling ipv4.<domain> returns the bare IPv4 address. ``secure`` and
-# the ``httpN`` family do NOT rewrite — they serve the full home page.
+# so curling ipv4.<domain> returns the bare IPv4 address. ``secure`` does
+# NOT rewrite — it's a TLS-only mirror of the apex.
 _REWRITE_PREFIXES = ("ipv4", "ipv6")
 
 
