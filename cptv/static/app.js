@@ -317,6 +317,10 @@
         "city",
       ]);
       if (geoipFallback) geoipFallback.hidden = true;
+      // SSR may have hidden the whole <article> (private client IP, no
+      // GeoLite2 DB). Reveal it now that the per-stack probe found
+      // usable data.
+      qs("#geoip-section")?.removeAttribute("hidden");
     }
     if (asnStacks && (asn.ipv4 || asn.ipv6)) {
       // Merge when ASN + operator match; the prefix line is rendered
@@ -324,6 +328,7 @@
       // (IPv4 / IPv6) instead of duplicating the whole card.
       renderPerStack(asnStacks, asn, buildAsnRow, ["asn", "name"]);
       if (asnFallback) asnFallback.hidden = true;
+      qs("#asn-section")?.removeAttribute("hidden");
     }
 
     // Hand the freshly-fetched per-stack info to the history tracker.

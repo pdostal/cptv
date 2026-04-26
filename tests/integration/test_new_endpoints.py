@@ -178,6 +178,30 @@ def test_aggregated_html_renders_sections(client: TestClient):
     assert "data:image/svg+xml" in body
 
 
+def test_geo_asn_sections_hidden_when_data_unavailable(client: TestClient):
+    """Issue #33: hide the whole GEO/ASN <article> when neither service
+    has data (private IP, loopback, or no GeoLite2 DB loaded). The
+    elements stay in the DOM (so app.js can un-hide them after the
+    per-stack probe), but with the `hidden` attribute set.
+
+    The CI test environment has no GeoLite2 DBs mounted, so any client
+    IP will produce geoip=None and asn=None.
+    """
+    r = client.get("/", headers={**V4, "Accept": "text/html"})
+    assert r.status_code == 200
+    body = r.text
+    # Sections are present in the DOM (hidden, not removed).
+    assert 'id="geoip-section"' in body
+    assert 'id="asn-section"' in body
+    # And both carry the `hidden` attribute when data is unavailable.
+    assert 'id="geoip-section" hidden' in body
+    assert 'id="asn-section" hidden' in body
+    # The dead "unavailable" placeholder messages have been dropped \u2014
+    # the whole article is hidden now, so a separate apology is moot.
+    assert "Geolocation unavailable" not in body
+    assert "ASN data unavailable" not in body
+
+
 def test_details_endpoints_are_gone(client: TestClient):
     """/details, /more, /api/v1/details were folded into /."""
     for path in ("/details", "/more", "/api/v1/details"):
