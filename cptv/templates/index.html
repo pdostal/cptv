@@ -239,15 +239,14 @@ data.quick_links %}
     {% endif %}
   </p>
 
-  {# Capability table. The "Server" column is statically yes \u2014 we
-     wouldn't list the subdomain otherwise. The "Your client" column
-     is filled by detectProtocols() in app.js using
+  {# Capability table. Server-side support is implicit \u2014 we wouldn't
+     list the subdomain otherwise. The "Your client" column is filled
+     by detectProtocols() in app.js using
      performance.getEntriesByName(url)[0].nextHopProtocol. #}
   <table id="protocol-table">
     <thead>
       <tr>
         <th scope="col">Endpoint</th>
-        <th scope="col">Server</th>
         <th scope="col">Your client</th>
       </tr>
     </thead>
@@ -258,7 +257,6 @@ data.quick_links %}
           <code>{{ ep.url }}</code><br />
           <small>{{ ep.name }}{% if ep.alpn == 'h3' %} (QUIC){% endif %}</small>
         </td>
-        <td>✅</td>
         <td data-protocol-probe="{{ ep.alpn }}"><small>…</small></td>
       </tr>
       {% endfor %}
