@@ -8,6 +8,33 @@ The application is **domain-agnostic** — nothing about `cptv.cz` is hardcoded.
 
 > **Status:** early implementation. Scaffolding and CI are in place; many features from `PLAN.md` §4 are still pending. See `CLAUDE.md` for what works today vs. what's still to build.
 
+## Table of contents
+
+- [Running the container](#running-the-container)
+  - [Required at deploy time](#required-at-deploy-time)
+  - [Configuration (environment variables)](#configuration-environment-variables)
+- [Production deployment with Podman Quadlet](#production-deployment-with-podman-quadlet)
+  - [1. Quadlet unit files](#1-quadlet-unit-files)
+  - [2. Load and start the units](#2-load-and-start-the-units)
+  - [3. Enable Podman auto-update](#3-enable-podman-auto-update)
+- [nginx reverse proxy](#nginx-reverse-proxy)
+  - [`/etc/nginx/snippets/cptv-proxy.conf`](#etcnginxsnippetscptv-proxyconf)
+  - [`/etc/nginx/sites-available/cptv.conf`](#etcnginxsites-availablecptvconf)
+  - [HTTP/3 / QUIC prerequisites](#http3--quic-prerequisites)
+- [Certbot (nginx plugin)](#certbot-nginx-plugin)
+- [Protocol probes](#protocol-probes)
+- [Building locally](#building-locally)
+  - [Running Valkey locally for development](#running-valkey-locally-for-development)
+  - [Building the container image](#building-the-container-image)
+- [GeoLite2 setup](#geolite2-setup)
+  - [1. Sign up and get a license key](#1-sign-up-and-get-a-license-key)
+  - [2. Initial download](#2-initial-download)
+  - [3. Systemd timer for weekly refresh](#3-systemd-timer-for-weekly-refresh)
+- [Publishing](#publishing)
+- [Security + quality scanning](#security--quality-scanning)
+- [Privacy](#privacy)
+- [Repository](#repository)
+
 ## Running the container
 
 Images are published to `ghcr.io/pdostal/cptv` — container distribution only (no PyPI).
