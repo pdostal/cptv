@@ -395,7 +395,7 @@ server {
 }
 
 # ---- http1.<domain>: server only speaks HTTP/1.1 ----
-# No `http2 on;` and no `http3 on;`, so nginx advertises only
+# No `http2 on;` and no `quic` listener, so nginx advertises only
 # http/1.1 in ALPN. There is no HTTP-module ALPN-pinning directive in
 # nginx (`ssl_alpn` is stream-only), so a client that explicitly asks
 # for HTTP/1.1 against http2.<domain> will still succeed at HTTP/1.1.
@@ -444,7 +444,6 @@ server {
     listen 443 quic reuseport;
     listen [::]:443 quic reuseport;
     http2 on;
-    http3 on;
     server_name http3.cptv.example.com;
 
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
@@ -460,8 +459,8 @@ server {
 
 ### HTTP/3 / QUIC prerequisites
 
-- **nginx ≥ 1.25** built with QUIC support. Mainline nginx 1.25+ ships QUIC out of the box; older or distro-pinned builds may not. Check with `nginx -V 2>&1 | grep -o quic`.
-- **No HTTP-module ALPN pinning.** nginx's HTTP module has no `ssl_alpn` directive (it lives in the stream module only), so the `httpN.<domain>` probes restrict the protocols nginx *advertises* via the listener-level `http2 on;` / `http3 on;` toggles, not via ALPN whitelist. A client that explicitly downgrades (e.g. `curl --http1.1 https://http2.<domain>`) will succeed at the lower version. The capability table reports what was *negotiated*, not what was forced.
+- **nginx ≥ 1.25 built with `--with-http_v3_module`.** Mainline nginx 1.25+ ships QUIC, but `ngx_http_v3_module` has to be compiled in. Check with `nginx -V 2>&1 | tr ' ' '\n' | grep -E 'http_v3|quic'`. If your build lacks the module, `listen ... quic` will fail with `unknown directive`. The directive `http3 on;` itself is the default and unnecessary in the config \u2014 `listen ... quic` is what actually activates HTTP/3.
+- **No HTTP-module ALPN pinning.** nginx's HTTP module has no `ssl_alpn` directive (it lives in the stream module only), so the `httpN.<domain>` probes restrict the protocols nginx *advertises* via the listener-level `http2 on;` toggle and the `quic` listen parameter, not via ALPN whitelist. A client that explicitly downgrades (e.g. `curl --http1.1 https://http2.<domain>`) will succeed at the lower version. The capability table reports what was *negotiated*, not what was forced.
 - **UDP/443 must be open** through host and cloud firewalls. HTTP/3 uses QUIC over UDP; without it the browser silently falls back to HTTP/2 and the capability table shows ❌.
 - **`Alt-Svc` advertisement** is what tells browsers "I also speak h3 here". The first request still uses h2; subsequent ones may upgrade. Cold reloads will look like h2 until the cache is warm.
 
@@ -522,7 +521,7 @@ Output is a single tab-separated line — `cut -f1` pulls just the HTTP version.
 If the capability table shows ❌ for a row, check (in order):
 
 1. The matching `httpN.<domain>` is reachable on TCP/443 (or UDP/443 for HTTP/3).
-2. nginx version supports the required listener directive (`http2 on;` since 1.25.1, `http3 on;` + `quic` listeners since 1.25.0).
+2. nginx version supports the required listener directive (`http2 on;` since 1.25.1, `quic` listen parameter since 1.25.0 with `--with-http_v3_module`).
 3. For HTTP/3: UDP/443 is open through firewalls, and the `Alt-Svc` header is being advertised on prior responses.
 4. The browser actually supports HTTP/3 (Safari needs the experimental flag in some versions).
 5. Note that the probe shows what was *negotiated*. A client that explicitly downgrades (e.g. `curl --http1.1 https://http2.<domain>`) will report `http/1.1` here \u2014 not a server bug.
