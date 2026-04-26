@@ -140,7 +140,10 @@ def test_aggregated_html_includes_protocol_section(client: TestClient) -> None:
     r = client.get("/", headers={**V4, "Accept": "text/html"})
     assert r.status_code == 200
     assert 'id="protocol-section"' in r.text
-    assert 'id="protocol-table"' in r.text
+    assert 'id="protocol-list"' in r.text
+    # The mixed-content note exists in the DOM (hidden by default;
+    # app.js reveals it when window.location.protocol === 'http:').
+    assert 'id="protocol-https-note"' in r.text
     # All three probe rows are present.
     assert 'data-protocol-probe="http/1.1"' in r.text
     assert 'data-protocol-probe="h2"' in r.text
