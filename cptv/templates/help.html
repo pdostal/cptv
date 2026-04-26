@@ -111,16 +111,14 @@
       (HTTPS only)
     </li>
     <li>
-      <code>http1.{{ domain }}</code> — HTTPS pinned to HTTP/1.1 only
-      (ALPN <code>http/1.1</code>)
+      <code>http1.{{ domain }}</code> — HTTPS, server only speaks
+      HTTP/1.1 (no <code>http2 on;</code>)
     </li>
     <li>
-      <code>http2.{{ domain }}</code> — HTTPS with HTTP/2 (ALPN
-      <code>h2</code>)
+      <code>http2.{{ domain }}</code> — HTTPS with HTTP/2 enabled
     </li>
     <li>
-      <code>http3.{{ domain }}</code> — HTTPS + HTTP/3 / QUIC (ALPN
-      <code>h3</code>, UDP/443)
+      <code>http3.{{ domain }}</code> — HTTPS + HTTP/3 / QUIC (UDP/443)
     </li>
   </ul>
   <p>
