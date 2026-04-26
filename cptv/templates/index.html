@@ -68,12 +68,18 @@ http = data.http %} {% set quick_links = data.quick_links %}
   </div>
 </article>
 
-<article id="geoip-section">
+<article id="geoip-section"{% if not geo %} hidden{% endif %}>
   <header><strong>🌍 Geolocation</strong></header>
   {# Per-stack rows; JS fills in fresh data fetched from
      //ipv4.<base>/geoip and //ipv6.<base>/geoip after the dual-stack
      probe knows the IPs. The SSR fallback below shows the current
-     connection only and gets hidden once JS takes over. #}
+     connection only and gets hidden once JS takes over.
+
+     The whole <article> is hidden when SSR has no GeoIP data (private
+     IP, loopback, missing GeoLite2 DB). app.js un-hides it again if
+     the per-stack probe later finds usable data \u2014 e.g. the request
+     came in via a proxy that mangled X-Forwarded-For but the public
+     ipv4./ipv6. probes succeed. #}
   <div id="geoip-stacks" hidden></div>
   <div id="geoip-fallback">
     {% if geo %}
@@ -93,13 +99,6 @@ http = data.http %} {% set quick_links = data.quick_links %}
       </li>
       {% endif %}
     </ul>
-    {% else %}
-    <p>
-      <small
-        >Geolocation unavailable (private IP or GeoLite2 database not
-        loaded).</small
-      >
-    </p>
     {% endif %}
   </div>
   <details>
@@ -111,8 +110,10 @@ http = data.http %} {% set quick_links = data.quick_links %}
   </details>
 </article>
 
-<article id="asn-section">
+<article id="asn-section"{% if not asn %} hidden{% endif %}>
   <header><strong>🔌 ASN / Network</strong></header>
+  {# Hidden by SSR when no ASN data; app.js un-hides if the per-stack
+     probe finds usable data. See #geoip-section for rationale. #}
   <div id="asn-stacks" hidden></div>
   <div id="asn-fallback">
     {% if asn %}
@@ -132,13 +133,6 @@ http = data.http %} {% set quick_links = data.quick_links %}
         >
       </li>
     </ul>
-    {% else %}
-    <p>
-      <small
-        >ASN data unavailable (private IP or GeoLite2 ASN database not
-        loaded).</small
-      >
-    </p>
     {% endif %}
   </div>
 </article>
