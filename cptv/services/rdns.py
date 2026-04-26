@@ -28,12 +28,16 @@ _LOOKUP_TIMEOUT_S = 0.3
 async def lookup(addr: IPAddress | None) -> str | None:
     """Reverse DNS (PTR) for an address. Cached in Valkey when available.
 
-    Returns ``None`` for ``None`` input, private addresses (PTR for
-    RFC1918 leaks DNS queries and is rarely useful), failed lookups,
-    NXDOMAIN, and timeouts. The caller should treat ``None`` uniformly
-    as "no useful hostname".
+    Returns ``None`` for ``None`` input, failed lookups, NXDOMAIN, and
+    timeouts. The caller should treat ``None`` uniformly as "no useful
+    hostname".
+
+    Private (RFC1918 / ULA) addresses are NOT skipped: self-hosted
+    deployments routinely run a local resolver with PTR zones for the
+    LAN, and the 0.3 s timeout caps damage from misbehaving upstream
+    resolvers that might forward such queries.
     """
-    if addr is None or addr.is_private:
+    if addr is None:
         return None
 
     key = f"{_CACHE_PREFIX}{addr}"

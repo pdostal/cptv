@@ -74,3 +74,78 @@ def test_rdns_api_v1_alias(client: TestClient) -> None:
         r = client.get("/api/v1/rdns/1.1.1.1", headers={**V4, "Accept": "application/json"})
     assert r.status_code == 200
     assert r.json()["hostname"] == "ok.example"
+
+
+# ---------- /rdns (no arg) \u2014 resolves the caller's IP ----------
+
+
+def test_rdns_no_arg_resolves_caller_ip(client: TestClient) -> None:
+    """/rdns without a path arg should look up the caller's own IP."""
+    with patch(
+        "cptv.routes.rdns.rdns_service.lookup",
+        new=AsyncMock(return_value="caller.example.com"),
+    ):
+        r = client.get(
+            "/rdns",
+            headers={"X-Forwarded-For": "8.8.8.8", "Accept": "application/json"},
+        )
+    assert r.status_code == 200
+    assert r.json() == {"ip": "8.8.8.8", "hostname": "caller.example.com"}
+
+
+def test_rdns_trailing_slash_resolves_caller_ip(client: TestClient) -> None:
+    with patch(
+        "cptv.routes.rdns.rdns_service.lookup",
+        new=AsyncMock(return_value="caller.example.com"),
+    ):
+        r = client.get(
+            "/rdns/",
+            headers={"X-Forwarded-For": "8.8.8.8", "Accept": "application/json"},
+        )
+    assert r.status_code == 200
+    assert r.json()["hostname"] == "caller.example.com"
+
+
+def test_rdns_api_v1_no_arg_resolves_caller_ip(client: TestClient) -> None:
+    with patch(
+        "cptv.routes.rdns.rdns_service.lookup",
+        new=AsyncMock(return_value="caller.example.com"),
+    ):
+        r = client.get(
+            "/api/v1/rdns",
+            headers={"X-Forwarded-For": "8.8.8.8", "Accept": "application/json"},
+        )
+    assert r.status_code == 200
+    assert r.json()["hostname"] == "caller.example.com"
+
+
+def test_rdns_no_arg_text_returns_just_hostname(client: TestClient) -> None:
+    """Text shape: just the hostname, no IP wrapper. Same as /rdns/<ip>."""
+    with patch(
+        "cptv.routes.rdns.rdns_service.lookup",
+        new=AsyncMock(return_value="caller.example.com"),
+    ):
+        r = client.get(
+            "/rdns",
+            headers={"X-Forwarded-For": "8.8.8.8", **CURL},
+        )
+    assert r.status_code == 200
+    assert r.text.rstrip("\n").splitlines()[0] == "caller.example.com"
+
+
+def test_rdns_no_arg_resolves_private_caller_ip(client: TestClient) -> None:
+    """Private caller IP (e.g. self-hosted on a LAN) must work \u2014 the
+    is_private skip was removed in v0.4.1 so the resolver gets a chance."""
+    with patch(
+        "cptv.routes.rdns.rdns_service.lookup",
+        new=AsyncMock(return_value="silver.local"),
+    ):
+        r = client.get(
+            "/rdns",
+            headers={
+                "X-Forwarded-For": "192.168.7.71",
+                "Accept": "application/json",
+            },
+        )
+    assert r.status_code == 200
+    assert r.json() == {"ip": "192.168.7.71", "hostname": "silver.local"}

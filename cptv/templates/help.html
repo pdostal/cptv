@@ -46,10 +46,12 @@
         <td>DNS resolver classifier (<code>?resolver=…</code> optional)</td>
       </tr>
       <tr>
-        <td><code>/rdns/{ip}</code></td>
+        <td><code>/rdns</code> <code>/rdns/{ip}</code></td>
         <td>
-          Reverse DNS (PTR) for any IP. Cached, 0.3 s timeout, public
-          CORS so the dual-stack probe can fan out cross-origin.
+          Reverse DNS (PTR). With no path arg, resolves the caller's
+          own IP (including RFC1918 if your resolver answers). With an
+          explicit IP, resolves that one. Cached, 0.3 s timeout,
+          public CORS so the dual-stack probe can fan out cross-origin.
         </td>
       </tr>
       <tr>
@@ -153,6 +155,7 @@ curl ipv6.{{ domain }}                  # bare IPv6
 MY_IP=$(curl -s ipv4.{{ domain }})      # capture in shell
 curl {{ domain }}/geoip                 # one section, plain text
 curl {{ domain }}/asn?format=json       # one section, JSON
+curl {{ domain }}/rdns                  # PTR for your own IP
 curl {{ domain }}/rdns/1.1.1.1          # PTR for any IP
 curl {{ domain }}/traceroute.txt        # blocking traceroute
 curl -I {{ domain }}/ip                 # see response headers
