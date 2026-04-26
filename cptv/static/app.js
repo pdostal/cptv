@@ -364,21 +364,27 @@
   }
 
   async function detectProtocols() {
-    const rows = document.querySelectorAll("[data-protocol-probe]");
-    if (!rows.length) return;
+    const cells = document.querySelectorAll("[data-protocol-probe]");
+    if (!cells.length) return;
     const host = window.location.hostname;
     if (!host || host === "localhost" || host === "127.0.0.1") return;
 
+    // The probe endpoints are HTTPS-only (HTTP/2 and HTTP/3 don't exist
+    // over plaintext, and forcing HTTPS on http1.<base> too keeps
+    // semantics symmetrical). From an http:// page the browser would
+    // block them all as mixed content, so swap the list for a single
+    // explanatory note that points at secure.<base>.
+    if (window.location.protocol === "http:") {
+      const list = qs("#protocol-list");
+      const note = qs("#protocol-https-note");
+      if (list) list.hidden = true;
+      if (note) note.hidden = false;
+      return;
+    }
+
     const base = getBaseDomain();
 
-    // The probes always go over https because nginx pins each
-    // httpN.<base> to TLS \u2014 HTTP/2 and HTTP/3 are TLS-only on the wire,
-    // and forcing HTTPS on http1.<base> too keeps semantics symmetrical.
-    // Mixed-content from an http://apex page will be blocked; in that
-    // case the cell shows a warning instead of a result.
-    const isPlaintextPage = window.location.protocol === "http:";
-
-    for (const cell of rows) {
+    for (const cell of cells) {
       const expected = cell.getAttribute("data-protocol-probe");
       if (!expected) continue;
       const prefixMatch = ["http/1.1", "h2", "h3"].indexOf(expected);
@@ -386,11 +392,46 @@
       const prefix = ["http1", "http2", "http3"][prefixMatch];
       const url = `https://${prefix}.${base}/protocol`;
 
-      if (isPlaintextPage) {
-        cell.innerHTML =
-          '<small title="Browser blocks https probe from an http page">\u26a0\ufe0f mixed content</small>';
-        continue;
+      try {
+        const resp = await fetch(url, {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (!resp.ok) {
+          // 404 most often means the httpN.<base> server block isn't
+          // configured in nginx, the cert doesn't cover it, or DNS
+          // is missing. Don't try to parse a body in that case.
+          const hint =
+            resp.status === 404
+              ? "endpoint not configured"
+              : `HTTP ${resp.status}`;
+          cell.innerHTML = `<small>\u274c ${hint}</small>`;
+          continue;
+        }
+        const body = await resp.json();
+        // Prefer the browser's view of the negotiation. Falls back to
+        // what the server saw nginx negotiate.
+        let actual = null;
+        try {
+          const entry = performance.getEntriesByName(url)[0];
+          actual = entry?.nextHopProtocol || null;
+        } catch {
+          /* performance API missing or restricted */
+        }
+        const serverReported = expectedAlpnFor(body.http_version);
+        const got = actual || serverReported;
+        const ok = got === expected;
+        const label = got || "unknown";
+        cell.innerHTML = ok
+          ? `<small>\u2705 <code>${label}</code></small>`
+          : `<small>\u274c got <code>${label}</code></small>`;
+      } catch {
+        // Network error / DNS / TLS handshake failure / CORS preflight
+        // refusal all land here.
+        cell.innerHTML = "<small>\u274c unreachable</small>";
       }
+    }
+  }
 
       try {
         const resp = await fetch(url, {
