@@ -14,6 +14,7 @@ from cptv.services import dns as dns_service
 from cptv.services import geoip as geoip_service
 from cptv.services import ip as ip_service
 from cptv.services import protocol as protocol_service
+from cptv.services import rdns as rdns_service
 from cptv.services import redirect_origin as redirect_origin_service
 
 router = APIRouter()
@@ -36,11 +37,15 @@ def _request_inspection(request: Request) -> dict:
     }
 
 
-def _collect(request: Request) -> dict:
+async def _collect(request: Request) -> dict:
     address = ip_service.client_ip(request)
     classified = ip_service.classify(address) if address is not None else None
     geo = geoip_service.lookup(address)
     asn = asn_service.lookup(address)
+    # PTR for the *current* connection's IP only. The other-stack IP is
+    # not known server-side; the JS dual-stack probe fetches it client-
+    # side via /rdns/<ip>. Bounded at 0.3 s in the service layer.
+    rdns = await rdns_service.lookup(address)
 
     current = classified.text if classified else None
     protocol = classified.protocol if classified else None
@@ -70,6 +75,9 @@ def _collect(request: Request) -> dict:
             "ipv6": ipv6,
             "is_private": classified.is_private if classified else None,
             "is_cgnat": classified.is_cgnat if classified else None,
+            # PTR for the current IP only. None when private, no PTR
+            # configured upstream, or the lookup timed out (>0.3 s).
+            "rdns": rdns,
         },
         "geoip": None
         if geo is None
@@ -153,6 +161,8 @@ def _text_aggregated(data: dict) -> str:
     ip_proto = ip["protocol"] or ""
     suffix = f"  ({ip_proto}, preferred)" if ip_proto else ""
     lines.append(f"🌐 IP:        {current}{suffix}")
+    if ip.get("rdns"):
+        lines.append(f"   rDNS:      {ip['rdns']}")
     if ip["ipv4"] and ip["protocol"] != "IPv4":
         lines.append(f"   IPv4:      {ip['ipv4']}")
     if ip["ipv6"] and ip["protocol"] != "IPv6":
@@ -200,8 +210,8 @@ def _text_aggregated(data: dict) -> str:
 def _register(templates: Jinja2Templates) -> APIRouter:
     @router.get("/")
     @router.get("/api/v1/")
-    def aggregated(request: Request) -> Response:
-        data = _collect(request)
+    async def aggregated(request: Request) -> Response:
+        data = await _collect(request)
         return respond(
             request,
             templates=templates,

@@ -80,6 +80,9 @@ def test_aggregated_json_v4(client: TestClient):
     assert body["ip"]["protocol"] == "IPv4"
     assert body["ip"]["ipv4"] == "203.0.113.42"
     assert body["ip"]["ipv6"] is None
+    # rDNS key is always present; value is None in the test environment
+    # (TEST-NET-3 has no PTR + 0.3 s timeout).
+    assert "rdns" in body["ip"]
     assert body["geoip"] is None
     assert body["quick_links"] == []
 

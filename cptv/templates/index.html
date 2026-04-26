@@ -46,6 +46,12 @@ data.quick_links %}
       %}{% if ip.is_cgnat %}CGNAT ⚠️{% endif %})</small
     >
     {% endif %}
+    {# Reverse DNS for the current IP (server-side, ~0.3 s lookup
+       budget). The <br> ensures the hostname wraps to its own line on
+       narrow screens instead of getting squished beside the IP. #}
+    {% if ip.rdns %}
+    <br /><small data-rdns="current">↳ <code>{{ ip.rdns }}</code></small>
+    {% endif %}
   </p>
   {% else %}
   <p><code>unknown</code></p>
@@ -57,10 +63,14 @@ data.quick_links %}
       <li>
         IPv4: <code data-ds="ipv4">{{ ip.ipv4 or '…' }}</code>
         <small data-ds-via="ipv4" class="cptv-probe-via"></small>
+        {# rDNS for this stack \u2014 filled by detectRdns() in app.js once
+           the dual-stack probe knows the IP. Kept empty server-side. #}
+        <br /><small data-ds-rdns="ipv4"></small>
       </li>
       <li>
         IPv6: <code data-ds="ipv6">{{ ip.ipv6 or '…' }}</code>
         <small data-ds-via="ipv6" class="cptv-probe-via"></small>
+        <br /><small data-ds-rdns="ipv6"></small>
       </li>
     </ul>
     <noscript
