@@ -44,7 +44,7 @@ exclude_dirs = ["tests", ".venv", "node_modules"]
 
 [tool.djlint]
 profile = "jinja"
-ignore = "J004,J018,H031"
+ignore = "J004,J018,H025,H031"
 
 [tool.pylint.main]
 py-version = "3.12"
