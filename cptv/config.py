@@ -68,6 +68,10 @@ class Settings(BaseSettings):
         default=3600,
         description="Traceroute cache TTL in seconds (default 1 hour).",
     )
+    rdns_cache_ttl: int = Field(
+        default=86400,
+        description="Reverse DNS (PTR) cache TTL in seconds (default 24 h).",
+    )
     traceroute_max_concurrency: int = Field(
         default=4,
         ge=1,

@@ -135,6 +135,52 @@
     }
   }
 
+  // ---------- per-stack reverse DNS ----------
+  // After dual-stack discovery has the IPs, fan out PTR lookups for
+  // each stack and fill the [data-ds-rdns="ipv4|ipv6"] slots. The
+  // server-side _collect() already populated the rDNS for the *current*
+  // connection's IP; this fills in the *other* stack's rDNS once the
+  // browser knows it.
+  async function detectRdns() {
+    const host = window.location.hostname;
+    const port = window.location.port ? `:${window.location.port}` : "";
+    if (!host || host === "localhost" || host === "127.0.0.1") return;
+
+    const base = getBaseDomain();
+    for (const stack of ["ipv4", "ipv6"]) {
+      const ipEl = document.querySelector(`[data-ds="${stack}"]`);
+      const ip = ipEl ? ipEl.textContent.trim() : "";
+      // Skip when the dual-stack probe didn't find an IP for this stack
+      // (placeholder is "…").
+      if (!ip || ip === "…") continue;
+
+      const cell = document.querySelector(`[data-ds-rdns="${stack}"]`);
+      if (!cell) continue;
+
+      const url = `//${stack}.${base}${port}/rdns/${encodeURIComponent(
+        ip,
+      )}?format=text`;
+      try {
+        const resp = await fetch(url, { cache: "no-store" });
+        if (!resp.ok) continue;
+        const text = (await resp.text()).trim();
+        // Service emits "—" for "no PTR" — don't render that as a
+        // hostname; just leave the slot empty.
+        if (!text || text === "\u2014") continue;
+        // Strip the negotiation hint comment that respond() appends to
+        // text bodies (everything after the first '#tip:' marker).
+        const hostname = text.split("\n")[0].trim();
+        if (!hostname || hostname === "\u2014") continue;
+        const codeEl = document.createElement("code");
+        codeEl.textContent = hostname;
+        cell.textContent = "\u21b3 ";
+        cell.appendChild(codeEl);
+      } catch {
+        /* silent — rDNS is best-effort */
+      }
+    }
+  }
+
   // ---------- per-stack ASN/GeoIP enrichment ----------
   // Once dual-stack discovery has the IPs, fetch /asn and /geoip from
   // both ipv4. and ipv6. so the GeoIP and ASN cards can show fresh
@@ -991,5 +1037,8 @@
     const enriched = await enrichDualStackInfo();
     trackHistory(enriched);
     wireTracerouteWhenStacksKnown();
+    // PTR lookups for both stacks. Best-effort and runs after history
+    // so the rest of the page is fully alive while DNS resolves.
+    detectRdns();
   });
 })();

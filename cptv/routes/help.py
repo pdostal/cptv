@@ -23,6 +23,7 @@ ENDPOINTS
     /asn                   ASN, operator name, prefix, looking-glass URL
     /isp                   "<name> (AS<n>)" (bare value, scriptable)
     /dns                   DNS resolver classifier (?resolver=… optional)
+    /rdns/{{ip}}           Reverse DNS (PTR) for any IP (cached)
     /protocol              Negotiated HTTP version, TLS version, ALPN
     /traceroute            Full traceroute, blocking
     /traceroute.json       Same, JSON only
@@ -57,6 +58,7 @@ EXAMPLES
     MY_IP=$(curl -s ipv4.{domain})       # capture in shell
     curl {domain}/geoip                  # one section, plain text
     curl {domain}/asn?format=json        # one section, JSON
+    curl {domain}/rdns/1.1.1.1           # PTR for any IP
     curl {domain}/traceroute.txt         # blocking traceroute
     curl -I {domain}/ip                  # response headers
 

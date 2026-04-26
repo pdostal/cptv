@@ -46,6 +46,13 @@
         <td>DNS resolver classifier (<code>?resolver=…</code> optional)</td>
       </tr>
       <tr>
+        <td><code>/rdns/{ip}</code></td>
+        <td>
+          Reverse DNS (PTR) for any IP. Cached, 0.3 s timeout, public
+          CORS so the dual-stack probe can fan out cross-origin.
+        </td>
+      </tr>
+      <tr>
         <td><code>/protocol</code></td>
         <td>
           Negotiated HTTP version, TLS version, ALPN. Hit
@@ -146,6 +153,7 @@ curl ipv6.{{ domain }}                  # bare IPv6
 MY_IP=$(curl -s ipv4.{{ domain }})      # capture in shell
 curl {{ domain }}/geoip                 # one section, plain text
 curl {{ domain }}/asn?format=json       # one section, JSON
+curl {{ domain }}/rdns/1.1.1.1          # PTR for any IP
 curl {{ domain }}/traceroute.txt        # blocking traceroute
 curl -I {{ domain }}/ip                 # see response headers
 
