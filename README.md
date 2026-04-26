@@ -339,56 +339,28 @@ server {
     return 301 http://$host$request_uri;
 }
 
-# ---- ipv4.<domain>: HTTP (no redirect) ----
-# DNS A only, so the request is guaranteed to ride IPv4 even if the
-# client also has v6. The dual-stack probe on the apex page (HTTP)
-# fetches //ipv4.<domain>/4 over HTTP; the same probe on
-# secure.<domain> (HTTPS) needs the HTTPS variant below to avoid
-# mixed-content blocking. Both blocks must coexist \u2014 do NOT redirect
-# HTTP \u2192 HTTPS here.
+# ---- ipv4. + ipv6.: HTTP (no redirect) ----
+# DNS A only on ipv4., AAAA only on ipv6. \u2014 the dual-stack probe needs
+# both subdomains reachable on whichever scheme the parent page uses
+# (HTTP from the apex, HTTPS from secure.<domain> due to mixed-content
+# rules). Both subdomains share identical config, so one server {}
+# pair covers both. Do NOT redirect HTTP \u2192 HTTPS here.
 server {
     listen 80;
     listen [::]:80;
-    server_name ipv4.cptv.example.com;
+    server_name ipv4.cptv.example.com ipv6.cptv.example.com;
 
     location / {
         include snippets/cptv-proxy.conf;
     }
 }
 
-# ---- ipv4.<domain>: HTTPS (no redirect) ----
+# ---- ipv4. + ipv6.: HTTPS (no redirect) ----
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
-    server_name ipv4.cptv.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
-
-    location / {
-        include snippets/cptv-proxy.conf;
-    }
-}
-
-# ---- ipv6.<domain>: HTTP (no redirect) ----
-# DNS AAAA only \u2014 mirror of ipv4. above for the v6 leg of the probe.
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ipv6.cptv.example.com;
-
-    location / {
-        include snippets/cptv-proxy.conf;
-    }
-}
-
-# ---- ipv6.<domain>: HTTPS (no redirect) ----
-server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
-    server_name ipv6.cptv.example.com;
+    server_name ipv4.cptv.example.com ipv6.cptv.example.com;
 
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
@@ -422,11 +394,13 @@ server {
     }
 }
 
-# ---- http1.<domain>: pin the connection to HTTP/1.1 only ----
-# `ssl_alpn http/1.1;` requires nginx >= 1.21.4. Clients that insist
-# on HTTP/2 or HTTP/3 in their ALPN list will fail the handshake; this
-# is the desired behaviour so curl --http2 demonstrably can't use this
-# subdomain.
+# ---- http1.<domain>: server only speaks HTTP/1.1 ----
+# No `http2 on;` and no `http3 on;`, so nginx advertises only
+# http/1.1 in ALPN. There is no HTTP-module ALPN-pinning directive in
+# nginx (`ssl_alpn` is stream-only), so a client that explicitly asks
+# for HTTP/1.1 against http2.<domain> will still succeed at HTTP/1.1.
+# The capability table reports what was negotiated, not what was
+# enforced \u2014 see "Protocol probes" below.
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
@@ -435,14 +409,13 @@ server {
 
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
-    ssl_alpn http/1.1;
 
     location / {
         include snippets/cptv-proxy.conf;
     }
 }
 
-# ---- http2.<domain>: prefer HTTP/2 with HTTP/1.1 fallback ----
+# ---- http2.<domain>: HTTP/2 enabled (h2 + http/1.1 in ALPN) ----
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
@@ -451,14 +424,13 @@ server {
 
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
-    ssl_alpn h2 http/1.1;
 
     location / {
         include snippets/cptv-proxy.conf;
     }
 }
 
-# ---- http3.<domain>: HTTP/3 (QUIC) with h2 + h1 fallback ----
+# ---- http3.<domain>: HTTP/3 (QUIC) + HTTP/2 + HTTP/1.1 ----
 # Requires nginx >= 1.25 built with QUIC support (mainline nginx ships
 # this since 1.25.0; Debian/Ubuntu's stock nginx may not). Clients
 # discover h3 via the Alt-Svc header on prior responses.
@@ -477,7 +449,6 @@ server {
 
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
-    ssl_alpn h3 h2 http/1.1;
 
     add_header Alt-Svc 'h3=":443"; ma=86400' always;
 
@@ -490,7 +461,7 @@ server {
 ### HTTP/3 / QUIC prerequisites
 
 - **nginx ≥ 1.25** built with QUIC support. Mainline nginx 1.25+ ships QUIC out of the box; older or distro-pinned builds may not. Check with `nginx -V 2>&1 | grep -o quic`.
-- **`ssl_alpn` directive** requires nginx ≥ 1.21.4. Without it the `http1.<domain>` ALPN pinning won't work and `curl --http2` will succeed against `http1.<domain>`.
+- **No HTTP-module ALPN pinning.** nginx's HTTP module has no `ssl_alpn` directive (it lives in the stream module only), so the `httpN.<domain>` probes restrict the protocols nginx *advertises* via the listener-level `http2 on;` / `http3 on;` toggles, not via ALPN whitelist. A client that explicitly downgrades (e.g. `curl --http1.1 https://http2.<domain>`) will succeed at the lower version. The capability table reports what was *negotiated*, not what was forced.
 - **UDP/443 must be open** through host and cloud firewalls. HTTP/3 uses QUIC over UDP; without it the browser silently falls back to HTTP/2 and the capability table shows ❌.
 - **`Alt-Svc` advertisement** is what tells browsers "I also speak h3 here". The first request still uses h2; subsequent ones may upgrade. Cold reloads will look like h2 until the cache is warm.
 
@@ -551,9 +522,10 @@ Output is a single tab-separated line — `cut -f1` pulls just the HTTP version.
 If the capability table shows ❌ for a row, check (in order):
 
 1. The matching `httpN.<domain>` is reachable on TCP/443 (or UDP/443 for HTTP/3).
-2. nginx version supports the required directive (`ssl_alpn` ≥ 1.21.4, QUIC ≥ 1.25).
+2. nginx version supports the required listener directive (`http2 on;` since 1.25.1, `http3 on;` + `quic` listeners since 1.25.0).
 3. For HTTP/3: UDP/443 is open through firewalls, and the `Alt-Svc` header is being advertised on prior responses.
 4. The browser actually supports HTTP/3 (Safari needs the experimental flag in some versions).
+5. Note that the probe shows what was *negotiated*. A client that explicitly downgrades (e.g. `curl --http1.1 https://http2.<domain>`) will report `http/1.1` here \u2014 not a server bug.
 
 ---
 
