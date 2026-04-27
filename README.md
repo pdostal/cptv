@@ -416,6 +416,47 @@ The reason: nginx's HTTP module has no per-vhost ALPN-pinning directive. `ssl_al
 
 Maintaining three near-identical subdomains, three certificate SANs, and a JS cross-origin probe to surface that same information was net negative. The current approach: one HTTPS host (`secure.<domain>`) that speaks all three protocols, and `curl --http1.1 / --http2 / --http3 https://secure.<domain>/protocol` for users who want to compare.
 
+### Visitor TCP timing & MSS (optional nginx headers)
+
+The Timing card on the home page shows per-stack visitor-side TCP RTT, RTT variance, and Maximum Segment Size — like bgp.tools' Timing rows. Because nginx terminates TCP, the Python app cannot read `TCP_INFO` on the visitor's socket directly. Instead, the app reads three response headers that nginx is expected to inject from the visitor's accepted socket:
+
+```text
+X-Tcp-Rtt-Us:    smoothed RTT estimate    (tcpi_rtt,    microseconds)
+X-Tcp-Rttvar-Us: RTT variance estimate    (tcpi_rttvar, microseconds)
+X-Tcp-Mss:       advertised MSS           (tcpi_advmss, bytes)
+```
+
+When the headers are present, the Timing card shows `IPv4 TCP Stack: 24.0ms [±15.8ms]` and `IPv4 TCP MSS: 1448b` rows for each stack. When absent, only the End-to-End rows (which the browser measures itself via `PerformanceResourceTiming`) populate. The app degrades silently with no errors logged.
+
+`lua-nginx-module` does not expose `TCP_INFO` natively. The two practical paths are:
+
+- **`lua-nginx-module` + `lua-resty-core` (FFI)**: call `getsockopt(SOL_TCP, TCP_INFO, …)` on the connection FD via LuaJIT's FFI in a `header_filter_by_lua_block`. Nginx's openresty bundle ships the pieces; vanilla distributions need building from source.
+- **`njs` (`ngx_http_js_module`)**: njs exposes `r.connection` but not `tcp_info` as of nginx 1.27; an FFI shim is still needed.
+
+Either way, the snippet must run for the `/timing/echo` location at minimum (the home-page JS reads the headers off the probe responses, not the page itself). Suggested location block:
+
+```nginx
+location = /timing/echo {
+    include snippets/cptv-proxy.conf;
+    # Inject visitor TCP_INFO + TCP_MAXSEG into the response.
+    # Implementation depends on your nginx build (lua-resty-core
+    # FFI or njs). The Python app reads three headers:
+    #   X-Tcp-Rtt-Us, X-Tcp-Rttvar-Us, X-Tcp-Mss
+    # When the snippet is absent the rows simply stay "—".
+    header_filter_by_lua_block {
+        -- Pseudocode; replace with your TCP_INFO FFI call.
+        -- local tcpi = require("cptv.tcpinfo").get(ngx.var.connection)
+        -- if tcpi then
+        --     ngx.header["X-Tcp-Rtt-Us"]    = tostring(tcpi.rtt)
+        --     ngx.header["X-Tcp-Rttvar-Us"] = tostring(tcpi.rttvar)
+        --     ngx.header["X-Tcp-Mss"]       = tostring(tcpi.advmss)
+        -- end
+    }
+}
+```
+
+Spoofing protection: the app strips these three headers from any inbound request whose immediate peer is not loopback, so a malicious client cannot inject fake values when the deployment forgets the reverse proxy.
+
 Enable the site:
 
 ```sh

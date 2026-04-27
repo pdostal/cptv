@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+from starlette.datastructures import MutableHeaders
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -17,6 +18,34 @@ SUBDOMAIN_PREFIXES = ("ipv4", "ipv6", "secure")
 # NOT rewrite — it's a TLS-only mirror of the apex.
 _REWRITE_PREFIXES = ("ipv4", "ipv6")
 
+# Headers the app trusts only from upstream nginx. If anything other
+# than a loopback peer sends them, we strip them so a malicious client
+# cannot spoof TCP RTT/MSS readings into the page when the app is
+# (mis)deployed without a reverse proxy. See cptv/services/timing.py.
+_TRUSTED_UPSTREAM_HEADERS = (
+    "x-tcp-rtt-us",
+    "x-tcp-rttvar-us",
+    "x-tcp-mss",
+)
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _strip_untrusted_headers(request: Request) -> None:
+    """Remove upstream-only headers when the immediate peer isn't loopback.
+
+    In production nginx is the only thing the app accepts traffic from,
+    so any inbound ``X-Tcp-*`` header is legitimate. When the app is
+    exposed directly (dev or misconfig), the peer is the visitor and
+    those headers must not be trusted.
+    """
+    peer = request.client.host if request.client else None
+    if peer in _LOOPBACK_HOSTS:
+        return
+    headers = MutableHeaders(scope=request.scope)
+    for name in _TRUSTED_UPSTREAM_HEADERS:
+        if name in headers:
+            del headers[name]
+
 
 class RequestTimingMiddleware(BaseHTTPMiddleware):
     """Stamps the request start time and exposes elapsed handling time.
@@ -26,9 +55,14 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
     before rendering. After the handler returns, the final elapsed value
     is also written to the ``X-Response-Time-Ms`` response header for
     observability.
+
+    Also strips spoofable upstream-only headers (``X-Tcp-Rtt-Us`` and
+    friends) from non-loopback inbound requests; see
+    ``_strip_untrusted_headers`` for the rationale.
     """
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        _strip_untrusted_headers(request)
         start = time.perf_counter()
         request.state.request_started_at = start
         response: Response = await call_next(request)

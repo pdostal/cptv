@@ -398,6 +398,128 @@
     return { geo, asn };
   }
 
+  // ---------- per-stack timing (end-to-end + TCP RTT/RTTvar/MSS) ----------
+  // Replicates bgp.tools' "Timing" rows for each stack:
+  //   * End-to-End:   median(K) of (responseEnd - startTime - X-Response-Time-Ms)
+  //   * TCP Stack:    X-Tcp-Rtt-Us / X-Tcp-Rttvar-Us (nginx-injected)
+  //   * TCP MSS:      X-Tcp-Mss (nginx-injected)
+  // The TCP / MSS rows are populated only when the upstream nginx
+  // exposes those headers; see README "Nginx configuration". The
+  // end-to-end row works without any nginx changes.
+  const TIMING_PROBE_SAMPLES = 5;
+
+  // Median of an array of numbers (returns null on empty input).
+  function median(values) {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2
+      ? sorted[mid]
+      : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  function setTimingCell(slot, text, title) {
+    const cell = document.querySelector(`[data-timing="${slot}"]`);
+    if (!cell) return;
+    cell.textContent = text;
+    if (title) cell.title = title;
+    const dl = qs("#timing-stacks");
+    if (dl) dl.hidden = false;
+  }
+
+  // Run K probes against //<stack>.<base>:port/timing/echo, recording
+  // resource-timing entries and the X-Response-Time-Ms / X-Tcp-* headers
+  // returned with each probe. Returns a summary or null when none of
+  // the probes reached the server.
+  async function probeStackTiming(stack, base, port) {
+    const samples = [];
+    let lastTcpHeaders = null;
+    for (let i = 0; i < TIMING_PROBE_SAMPLES; i++) {
+      const url = `//${stack}.${base}${port}/timing/echo?n=${i}-${Date.now()}`;
+      let resp;
+      try {
+        resp = await fetch(url, {
+          cache: "no-store",
+          headers: { Accept: "text/plain" },
+        });
+      } catch {
+        // Network-layer failure — most often a stack that the visitor
+        // can't reach. Bail; the row stays "—".
+        return null;
+      }
+      if (!resp.ok) continue;
+      // Drain the body so the resource-timing entry's responseEnd is
+      // populated before we read it.
+      try {
+        await resp.text();
+      } catch {
+        /* ignore */
+      }
+      const serverMs = parseFloat(resp.headers.get("X-Response-Time-Ms") || "");
+      const entries = window.performance?.getEntriesByName?.(
+        new URL(url, window.location.href).href,
+      );
+      const entry = entries && entries[entries.length - 1];
+      if (entry && Number.isFinite(serverMs)) {
+        const totalMs = entry.responseEnd - entry.startTime;
+        const networkMs = totalMs - serverMs;
+        if (Number.isFinite(networkMs) && networkMs >= 0) {
+          samples.push(networkMs);
+        }
+      }
+      // Capture TCP headers from the last successful probe; they're
+      // identical across the burst because the connection is the same.
+      const rttUs = resp.headers.get("X-Tcp-Rtt-Us");
+      const rttvarUs = resp.headers.get("X-Tcp-Rttvar-Us");
+      const mss = resp.headers.get("X-Tcp-Mss");
+      if (rttUs && rttvarUs && mss) {
+        lastTcpHeaders = { rttUs, rttvarUs, mss };
+      }
+    }
+    return { samples, tcp: lastTcpHeaders };
+  }
+
+  function formatMs(value) {
+    return `${value.toFixed(1)}ms`;
+  }
+
+  function renderTimingForStack(stack, result) {
+    if (!result) return;
+    const e2e = median(result.samples);
+    if (e2e !== null) {
+      setTimingCell(`e2e-${stack}`, formatMs(e2e));
+    }
+    if (result.tcp) {
+      const rttMs = parseInt(result.tcp.rttUs, 10) / 1000;
+      const rttvarMs = parseInt(result.tcp.rttvarUs, 10) / 1000;
+      const mss = parseInt(result.tcp.mss, 10);
+      if (Number.isFinite(rttMs) && Number.isFinite(rttvarMs)) {
+        setTimingCell(
+          `tcp-${stack}`,
+          `${rttMs.toFixed(1)}ms [\u00b1${rttvarMs.toFixed(1)}ms]`,
+        );
+      }
+      if (Number.isFinite(mss) && mss > 0) {
+        setTimingCell(`mss-${stack}`, `${mss}b`);
+      }
+    }
+  }
+
+  async function detectStackTimings() {
+    const host = window.location.hostname;
+    if (!host || host === "localhost" || host === "127.0.0.1") return;
+    if (typeof window.performance?.getEntriesByName !== "function") return;
+    const base = getBaseDomain();
+    const port = window.location.port ? `:${window.location.port}` : "";
+
+    const [v4, v6] = await Promise.all([
+      probeStackTiming("ipv4", base, port),
+      probeStackTiming("ipv6", base, port),
+    ]);
+    renderTimingForStack("ipv4", v4);
+    renderTimingForStack("ipv6", v6);
+  }
+
   // ---------- DNSSEC probe ----------
   // Loads an image from rhybar.cz (intentionally signed with an invalid
   // DNSSEC signature by CZ.NIC) and from a control host. If only the
@@ -1182,5 +1304,10 @@
     // PTR lookups for both stacks. Best-effort and runs after history
     // so the rest of the page is fully alive while DNS resolves.
     detectRdns();
+    // Per-stack end-to-end / TCP / MSS timing rows. Fires last so the
+    // probe burst doesn't compete with the dual-stack & enrichment
+    // requests; degrades silently when nginx isn't injecting the
+    // X-Tcp-* headers (only the End-to-End rows then populate).
+    detectStackTimings();
   });
 })();

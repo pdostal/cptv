@@ -244,6 +244,30 @@ data.quick_links %}
     <small>(time spent on the server, excludes network)</small>
   </p>
   {% endif %}
+  {# Per-stack timing rows. JS fills these in by:
+       * timing K /timing/echo probes against ipv4./ipv6.<base>
+       * subtracting the server-reported X-Response-Time-Ms to isolate
+         end-to-end network time
+       * reading nginx-injected X-Tcp-Rtt-Us / X-Tcp-Rttvar-Us /
+         X-Tcp-Mss for visitor-side TCP RTT, RTTvar and MSS.
+     Rows where the relevant data is missing keep their "—" placeholder
+     and a tooltip explaining why. The whole <dl> stays hidden until at
+     least one row populates so SSR users (curl, NoScript) don't see a
+     half-empty table. #}
+  <dl id="timing-stacks" hidden>
+    <dt>IPv4 End To End</dt>
+    <dd data-timing="e2e-ipv4" title="Median network round-trip across 5 probe samples">—</dd>
+    <dt>IPv4 TCP Stack</dt>
+    <dd data-timing="tcp-ipv4" title="From kernel TCP_INFO via nginx (see README)">—</dd>
+    <dt>IPv4 TCP MSS</dt>
+    <dd data-timing="mss-ipv4" title="Advertised MSS from kernel TCP_MAXSEG via nginx">—</dd>
+    <dt>IPv6 End To End</dt>
+    <dd data-timing="e2e-ipv6" title="Median network round-trip across 5 probe samples">—</dd>
+    <dt>IPv6 TCP Stack</dt>
+    <dd data-timing="tcp-ipv6" title="From kernel TCP_INFO via nginx (see README)">—</dd>
+    <dt>IPv6 TCP MSS</dt>
+    <dd data-timing="mss-ipv6" title="Advertised MSS from kernel TCP_MAXSEG via nginx">—</dd>
+  </dl>
   <p id="clock-skew-warning" hidden role="alert" aria-live="polite">
     <mark>
       ⚠️ Your clock is

@@ -114,4 +114,14 @@ def add_public_cors(response: Response) -> Response:
     """
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Cache-Control"] = "no-store"
+    # Expose timing-related headers so the home-page JS can read them
+    # cross-origin from ipv4./ipv6. probes:
+    #   * X-Response-Time-Ms: subtracted from the resource-timing total
+    #     to isolate end-to-end network time per stack.
+    #   * X-Tcp-{Rtt,Rttvar}-Us / X-Tcp-Mss: optional, injected by an
+    #     nginx Lua/njs snippet from the visitor's TCP socket. See the
+    #     "Nginx configuration" section of README.md.
+    response.headers["Access-Control-Expose-Headers"] = (
+        "X-Response-Time-Ms, X-Tcp-Rtt-Us, X-Tcp-Rttvar-Us, X-Tcp-Mss"
+    )
     return response
