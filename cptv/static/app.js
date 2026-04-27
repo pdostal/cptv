@@ -695,9 +695,23 @@
     const isLocalhost =
       !base || base === "localhost" || base === "127.0.0.1";
 
-    // Detect which stacks the dual-stack probe actually saw. We rely on
-    // the [data-ds] elements that detectDualStack() populates.
-    const seen = (stack) => {
+    // The current connection's stack is always traceable — the user is
+    // literally connected on it. The SSR template intentionally omits
+    // the [data-ds] element for the *current* stack (it renders only
+    // the *other* stack in #dual-stack), so we can't rely on data-ds
+    // alone for the current-connection stack. Read the protocol
+    // attribute the server already exposed on #dual-stack.
+    const currentProtocol = qs("#dual-stack")?.dataset.protocol || "";
+    const currentStack =
+      currentProtocol === "IPv4"
+        ? "ipv4"
+        : currentProtocol === "IPv6"
+          ? "ipv6"
+          : null;
+
+    // probed() detects the *other* stack via the data-ds cell that
+    // detectDualStack() populates asynchronously after page load.
+    const probed = (stack) => {
       const el = document.querySelector(`[data-ds="${stack}"]`);
       if (!el) return false;
       const txt = el.textContent.trim();
@@ -710,14 +724,36 @@
       isLocalhost ? "" : `//${stack}.${base}${port}`;
 
     const stacks = [];
-    if (isLocalhost || seen("ipv4")) stacks.push("ipv4");
-    if (isLocalhost || seen("ipv6")) stacks.push("ipv6");
+    for (const stack of ["ipv4", "ipv6"]) {
+      if (isLocalhost || stack === currentStack || probed(stack)) {
+        stacks.push(stack);
+      }
+    }
 
     if (stacks.length === 0) {
-      // No stack we could probe successfully. Hide the whole card.
-      const article = qs("#traceroute-section");
-      if (article) article.hidden = true;
+      // No detectable stack at all (no current protocol AND no probe
+      // success — rare: private/loopback IP with both subdomains
+      // unreachable). Keep the card visible with an explanatory note
+      // instead of vanishing silently.
+      card.replaceChildren();
+      const p = document.createElement("p");
+      const small = document.createElement("small");
+      small.textContent =
+        "Traceroute unavailable: neither IPv4 nor IPv6 was detected for this connection.";
+      p.appendChild(small);
+      card.appendChild(p);
       return;
+    }
+
+    // Prefer auto-starting the current-connection stack so the first
+    // hop arrives instantly (the user is already connected on it).
+    if (
+      currentStack &&
+      stacks.includes(currentStack) &&
+      stacks[0] !== currentStack
+    ) {
+      stacks.splice(stacks.indexOf(currentStack), 1);
+      stacks.unshift(currentStack);
     }
 
     const sources = {};
