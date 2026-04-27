@@ -94,12 +94,13 @@ proxy_set_header X-Forwarded-Proto $scheme;
 - Link to the forcing subdomains so users can test each protocol explicitly
 - The `ipv4.<domain>` and `ipv6.<domain>` subdomains also behave as dedicated single-purpose endpoints — when curled they return just the raw IP address in plain text, useful for scripting
 - The IP echo endpoints (`/ip`, `/ipv4`, `/ip4`, `/4`, `/ipv6`, `/ip6`, `/6` and their `/api/v1/` variants) emit `Access-Control-Allow-Origin: *` and `Cache-Control: no-store` so the home page's cross-origin dual-stack probe can read the body. CORS is **not** enabled on other endpoints.
+- When the user's network can reach only one stack (e.g. v4-only ISP probing `ipv6.<domain>`), the browser logs a generic `CORS request did not succeed, status (null)` line in the console. The wording is misleading — it is not a CORS misconfig, just an unreachable host — and the page handles it silently (the unreachable stack's row stays as `…`). Expected behaviour, no action required.
 
 ### 4.2 Geolocation 🌍
 
 - Country, region, city — queried server-side from the **MaxMind GeoLite2 City** database baked into the image
 - Approximate coordinates shown as an **OpenStreetMap (Leaflet)** map when JS is available, plain text otherwise; map tiles are loaded client-side from `tile.openstreetmap.org` (no API key, no server-side proxy)
-- Small opt-in **"Show my real location"** button triggers the browser Geolocation API (client-side JS); if granted, both the GeoIP estimate and the browser's reported position are shown as separate pins on the same map
+- Single **"📍 Compare with your real location"** button (apex copy: **"🔒 Switch to HTTPS to compare"**) — one click is enough. On `secure.` it triggers the browser Geolocation API directly; if granted, the browser's reported position is shown as a second pin on the same map alongside the GeoIP estimate.
 - Browsers block `navigator.geolocation` on insecure origins, and the apex
   `<domain>` is intentionally HTTP. When the JS detects
   `!window.isSecureContext`, the button becomes a deep link that
@@ -992,7 +993,7 @@ This statement is displayed at the bottom of every HTML page and included in the
 ### What stays in your browser
 
 - **Connection history** (IPv4/IPv6 addresses from previous visits, with first/last seen timestamps, ASN, and city) is stored exclusively in **your browser's `localStorage`** under the key `cptv:history:v2` — it never leaves your device and is never sent to the server. A **Clear history** button on the home page wipes it.
-- **Geolocation** (if you opt in via the "Show my real location" button) is used only to display your position as a second pin on the OpenStreetMap-backed map in your browser — the coordinates are never transmitted to the cptv server. Map tiles are fetched directly by your browser from `tile.openstreetmap.org`, which sees the tile-level coordinates of your viewport and your IP, per their [tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
+- **Geolocation** (if you opt in via the "Compare with your real location" button) is used only to display your position as a second pin on the OpenStreetMap-backed map in your browser — the coordinates are never transmitted to the cptv server. Map tiles are fetched directly by your browser from `tile.openstreetmap.org`
 - **DNSSEC test** results are determined entirely client-side by your browser loading an image — no result is reported back to the server
 - **Anycast PoP probe** to `https://1.1.1.1/cdn-cgi/trace` happens directly from your browser — the response is parsed in JavaScript and never seen by us
 - **Resolver whoami probe** to `https://dns.google/resolve?name=o-o.myaddr.l.google.com` happens directly from your browser — the answer is rendered in your DOM and never seen by us
@@ -1001,7 +1002,7 @@ This statement is displayed at the bottom of every HTML page and included in the
 
 ### In plain English
 
-> The server sees your IP address. Everything else — your location, your history, your DNSSEC status — is computed in your browser and stays there. The one third-party fetch is the OpenStreetMap tile request that paints the location pin. 🔒
+> The server sees your IP address. Everything else — your location, your history, your DNSSEC status — is computed in your browser and stays there. 🔒
 
 ---
 

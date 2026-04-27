@@ -28,6 +28,11 @@
     />
     <link rel="stylesheet" href="/static/vendor/pico.min.css" />
     <link rel="stylesheet" href="/static/app.css" />
+    {# Per-page extra <head> assets. The home page uses this to load
+       Leaflet from <head> so window.L exists by the time app.js runs
+       in <body>; mid-body script-defer ordering is implementation-
+       defined and was leaving the map blank in some browsers. #}
+    {% block extra_head %}{% endblock extra_head %}
   </head>
   <body>
     <header class="container">
@@ -105,8 +110,7 @@
       <hr />
       <small>
         Server sees only your IP. Everything else — location, history, DNSSEC —
-        is computed in your browser. The map pin loads tiles from
-        <code>tile.openstreetmap.org</code>. 🔒
+        is computed in your browser. 🔒
         <br />
         cptv by
         <a

@@ -448,6 +448,10 @@ systemctl status certbot.timer
 
 Certbot's nginx plugin will automatically update the `ssl_certificate` / `ssl_certificate_key` paths in your nginx config and set up a systemd timer for renewal.
 
+### Why the browser console may show "CORS request did not succeed"
+
+When a visitor's network can reach only one IP family (very common — many residential ISPs are still v4-only), the dual-stack probe's `fetch` to the unreachable subdomain (`ipv4.<domain>` or `ipv6.<domain>`) fails at the network layer. Firefox and Chrome log this as `CORS request did not succeed, status (null)` even though the server's CORS configuration is fine — the wording is the browser's generic message for "no response received". The page handles this silently and the unreachable stack's row stays as `…`. No fix needed.
+
 ---
 
 ## Connection protocol probe
