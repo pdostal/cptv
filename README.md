@@ -435,9 +435,9 @@ X-Tcp-Mss:       advertised MSS           (tcpi_advmss, bytes)
 
 When the headers are present, the Timing card shows `IPv4 TCP Stack: 24.0ms [±15.8ms]` and `IPv4 TCP MSS: 1448b` rows for each stack. When absent, only the End-to-End rows (which the browser measures itself via `PerformanceResourceTiming`) populate. The app degrades silently with no errors logged.
 
-#### RTT + RTTvar — works on stock nginx (no extra modules)
+#### RTT + RTTvar — works on any nginx (no extra modules)
 
-Linux nginx exposes `$tcpinfo_rtt`, `$tcpinfo_rttvar`, `$tcpinfo_snd_cwnd`, and `$tcpinfo_rcv_space` as built-in variables (see [`ngx_http_core_module`](https://nginx.org/en/docs/http/ngx_http_core_module.html#var_tcpinfo_rtt)). They read straight from `getsockopt(TCP_INFO)` on the visitor's accepted socket, so they're always the *visitor's* numbers, not loopback ones. Add three lines to the `cptv-proxy.conf` snippet:
+Linux nginx exposes `$tcpinfo_rtt`, `$tcpinfo_rttvar`, `$tcpinfo_snd_cwnd`, and `$tcpinfo_rcv_space` as built-in variables (see [`ngx_http_core_module`](https://nginx.org/en/docs/http/ngx_http_core_module.html#var_tcpinfo_rtt)). They read straight from `getsockopt(TCP_INFO)` on the visitor's accepted socket, so they're always the *visitor's* numbers, not loopback ones. Add two lines to the `cptv-proxy.conf` snippet:
 
 ```nginx
 # /etc/nginx/snippets/cptv-proxy.conf — append to the existing block:
@@ -445,54 +445,111 @@ proxy_set_header   X-Tcp-Rtt-Us              $tcpinfo_rtt;
 proxy_set_header   X-Tcp-Rttvar-Us           $tcpinfo_rttvar;
 ```
 
-That's it for RTT and RTTvar. Reload nginx and the per-stack `IPv4 / IPv6 TCP Stack` rows populate on the next page load. No location-specific config needed; the snippet is included by every cptv vhost.
+That's it for RTT and RTTvar. Reload nginx and the per-stack `IPv4 / IPv6 TCP Stack` rows populate on the next page load. No location-specific config needed; the snippet is included by every cptv vhost. This works on stock distro nginx and OpenResty alike.
 
-#### MSS — requires OpenResty (or another lua-nginx-module nginx)
+#### MSS — requires OpenResty (lua-nginx-module + lua-resty-core)
 
-`tcpi_advmss` is **not** exposed as a built-in nginx variable, so MSS needs `lua-nginx-module`'s FFI to call `getsockopt(IPPROTO_TCP, TCP_MAXSEG)` on the connection's file descriptor. The standard distribution nginx package on Debian/Ubuntu/Fedora/RHEL does **not** ship Lua. The supported way to add it is to install [OpenResty](https://openresty.org/), a drop-in nginx replacement that bundles `lua-nginx-module` + `lua-resty-core` + LuaJIT. (You can keep the same nginx config; OpenResty replaces the binary, not the configuration model.)
+`tcpi_advmss` is **not** exposed as a built-in nginx variable, so MSS needs `lua-nginx-module`'s LuaJIT FFI to call `getsockopt(IPPROTO_TCP, TCP_MAXSEG)` on the visitor's connection file descriptor. The standard distribution nginx package on Debian/Ubuntu/Fedora/RHEL does **not** ship Lua. The supported way to add it is [OpenResty](https://openresty.org/), a drop-in nginx replacement that bundles `lua-nginx-module`, `lua-resty-core`, and LuaJIT.
 
-Once OpenResty is installed, add this to the same `/etc/nginx/snippets/cptv-proxy.conf`:
+Two important constraints govern the snippet shape:
+
+- The `lua-nginx-module` README states that cosocket APIs are disabled in `set_by_lua*` and `header_filter_by_lua*`. We therefore cannot use `ngx.req.socket():getfd()` from those phases. The supported way to reach the visitor's FD is `lua-resty-core`'s `base.get_request()`, which returns the underlying `ngx_http_request_t*` C pointer; the FD lives at `r->connection->fd`.
+- That requires declaring partial nginx struct layouts via FFI. The layouts below match upstream nginx 1.21+ (the same ABI OpenResty ships). If you run a wildly different nginx fork, the offset of `fd` inside `ngx_connection_t` may differ — the snippet then logs a warning at startup and the MSS row stays empty.
+
+Add this to `/etc/nginx/nginx.conf` inside the `http {}` block (above any `server {}` blocks). Setting it in the `http {}` block compiles the FFI definitions once at startup instead of per request:
 
 ```nginx
-# Visitor TCP MSS (requires OpenResty / lua-nginx-module + lua-resty-core).
-# Reads getsockopt(IPPROTO_TCP, TCP_MAXSEG) on the connection FD via LuaJIT
-# FFI and stamps the result onto X-Tcp-Mss. The Python app picks it up
-# from request.headers and renders the per-stack 'TCP MSS' rows.
-#
-# Cost: one syscall per request. The result is request-scoped, so we
-# don't need a shared dict or worker-level cache.
-set_by_lua_block $cptv_tcp_mss {
+# /etc/nginx/nginx.conf — inside http { ... }
+init_by_lua_block {
     local ffi = require "ffi"
-    pcall(ffi.cdef, [[
+    -- Partial mirror of the nginx C structs we need to reach the
+    -- visitor's connection file descriptor. Field order must match
+    -- upstream nginx (verified against 1.21–1.27).
+    local ok, err = pcall(ffi.cdef, [[
+        typedef intptr_t        ngx_int_t;
+        typedef uintptr_t       ngx_uint_t;
+        typedef struct ngx_connection_s ngx_connection_t;
+        struct ngx_connection_s {
+            void              *data;
+            void              *read;
+            void              *write;
+            int                fd;
+            /* the rest of the struct is intentionally omitted; we
+               only ever read .fd, which sits at this offset because
+               nginx packs the preceding three pointers tightly. */
+        };
+        typedef struct {
+            ngx_uint_t         signature;
+            ngx_connection_t  *connection;
+            /* rest omitted — we only read .connection. */
+        } ngx_http_request_t_partial;
         int getsockopt(int sockfd, int level, int optname,
                        void *optval, unsigned int *optlen);
     ]])
-    local IPPROTO_TCP = 6
-    local TCP_MAXSEG  = 2
-    local fd = tonumber(ngx.var.connection) and ngx.req.socket and
-               (function()
-                   local sock, err = ngx.req.socket()
-                   if not sock then return nil end
-                   return sock:getfd and sock:getfd() or nil
-               end)() or nil
-    if not fd or fd < 0 then return "" end
-    local val = ffi.new("int[1]")
-    local len = ffi.new("unsigned int[1]", ffi.sizeof("int"))
-    if ffi.C.getsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, val, len) ~= 0 then
-        return ""
+    if not ok and not string.find(tostring(err), "redefined", 1, true) then
+        ngx.log(ngx.ERR, "cptv: ffi.cdef failed: ", err)
     end
-    return tostring(val[0])
 }
-proxy_set_header X-Tcp-Mss $cptv_tcp_mss;
+
+# Make $cptv_tcp_mss writable so header_filter_by_lua_block can set it
+# and proxy_set_header can read it. js_var would also work but lua_var
+# (via set_by_lua) keeps the dependency surface small.
+map $host $cptv_tcp_mss { default ""; }
 ```
 
-When `$cptv_tcp_mss` is empty (e.g. the FFI call failed or you reloaded the snippet on stock nginx without Lua), the `X-Tcp-Mss` header arrives with an empty value and the Python parser treats it as missing. The MSS row then displays `—`; RTT and RTTvar still populate from the previous block.
+Then in the same `/etc/nginx/snippets/cptv-proxy.conf` you already use, append a `header_filter_by_lua_block` and a `proxy_set_header`:
 
-If you cannot move to OpenResty, the End-to-End and TCP RTT/RTTvar rows still work on stock nginx — only the MSS row stays empty.
+```nginx
+# /etc/nginx/snippets/cptv-proxy.conf — append after the existing
+# proxy_set_header lines.
+#
+# header_filter_by_lua_block runs after upstream returns headers but
+# BEFORE they're sent to the client, so we can stamp X-Tcp-Mss onto
+# the response. Same phase as set_by_lua but without the cosocket
+# restrictions of set_by_lua.
+header_filter_by_lua_block {
+    local ffi  = require "ffi"
+    local base = require "resty.core.base"
+    local r = base.get_request()
+    if not r then return end
+
+    local req = ffi.cast("ngx_http_request_t_partial*", r)
+    if req == nil or req.connection == nil then return end
+    local fd = req.connection.fd
+    if fd <= 0 then return end
+
+    local IPPROTO_TCP = 6
+    local TCP_MAXSEG  = 2
+    local val = ffi.new("int[1]")
+    local len = ffi.new("unsigned int[1]", ffi.sizeof("int"))
+    if ffi.C.getsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, val, len) == 0 then
+        ngx.header["X-Tcp-Mss-Server"] = tostring(val[0])
+    end
+}
+```
+
+The header above is `X-Tcp-Mss-Server` — the *server-side* MSS, which is what the kernel exposes via `TCP_MAXSEG` on the listening socket. That's the value bgp.tools-style "TCP MSS" rows actually display: the MSS the server advertises, not the client's. The Python app accepts both `X-Tcp-Mss` and `X-Tcp-Mss-Server` (server-side preferred when both are present).
+
+When the FFI layout doesn't match (very old or patched nginx fork), the `header_filter_by_lua_block` logs nothing and the MSS row stays `—`. RTT and RTTvar are unaffected because they go through the simpler `proxy_set_header $tcpinfo_*` path that needs no Lua.
 
 #### Spoof protection
 
-The app strips `X-Tcp-Rtt-Us`, `X-Tcp-Rttvar-Us`, and `X-Tcp-Mss` from any inbound request whose immediate peer is not loopback (`127.0.0.1`, `::1`, `localhost`). That way a malicious client connecting directly to uvicorn (deployment without a reverse proxy, or a misconfigured one) cannot inject fake values into the Timing card. nginx on the loopback hop is the only sender the app trusts.
+The app strips `X-Tcp-Rtt-Us`, `X-Tcp-Rttvar-Us`, `X-Tcp-Mss`, and `X-Tcp-Mss-Server` from any inbound request whose immediate peer is not loopback (`127.0.0.1`, `::1`, `localhost`). That way a malicious client connecting directly to uvicorn (deployment without a reverse proxy, or a misconfigured one) cannot inject fake values into the Timing card. nginx on the loopback hop is the only sender the app trusts.
+
+#### Verifying the deployment
+
+After reloading OpenResty, hit `/timing/echo` and look for the headers:
+
+```sh
+curl -sI http://localhost/timing/echo \
+  | grep -iE 'x-tcp-|x-response-time'
+# X-Response-Time-Ms: 0.4
+# X-Tcp-Rtt-Us: 24587
+# X-Tcp-Rttvar-Us: 15820
+# X-Tcp-Mss-Server: 1448
+```
+
+If `X-Tcp-Rtt-Us` is missing, the `proxy_set_header` lines aren't being included. If only MSS is missing, the `init_by_lua_block` or `header_filter_by_lua_block` errored at startup — check `/var/log/nginx/error.log` (or wherever your OpenResty logs go) for `cptv: ffi.cdef failed`.
 
 Enable the site:
 

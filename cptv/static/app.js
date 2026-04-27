@@ -469,11 +469,16 @@
       }
       // Capture TCP headers from the last successful probe; they're
       // identical across the burst because the connection is the same.
+      // RTT/RTTvar work on stock nginx via $tcpinfo_*; MSS requires
+      // OpenResty + Lua FFI (X-Tcp-Mss-Server preferred). When MSS is
+      // missing the row stays "—" but RTT/RTTvar still populate.
       const rttUs = resp.headers.get("X-Tcp-Rtt-Us");
       const rttvarUs = resp.headers.get("X-Tcp-Rttvar-Us");
-      const mss = resp.headers.get("X-Tcp-Mss");
-      if (rttUs && rttvarUs && mss) {
-        lastTcpHeaders = { rttUs, rttvarUs, mss };
+      const mss =
+        resp.headers.get("X-Tcp-Mss-Server") ||
+        resp.headers.get("X-Tcp-Mss");
+      if (rttUs && rttvarUs) {
+        lastTcpHeaders = { rttUs, rttvarUs, mss: mss || null };
       }
     }
     return { samples, tcp: lastTcpHeaders };
@@ -492,15 +497,19 @@
     if (result.tcp) {
       const rttMs = parseInt(result.tcp.rttUs, 10) / 1000;
       const rttvarMs = parseInt(result.tcp.rttvarUs, 10) / 1000;
-      const mss = parseInt(result.tcp.mss, 10);
       if (Number.isFinite(rttMs) && Number.isFinite(rttvarMs)) {
         setTimingCell(
           `tcp-${stack}`,
           `${rttMs.toFixed(1)}ms [\u00b1${rttvarMs.toFixed(1)}ms]`,
         );
       }
-      if (Number.isFinite(mss) && mss > 0) {
-        setTimingCell(`mss-${stack}`, `${mss}b`);
+      // MSS is optional (requires OpenResty + Lua FFI); the cell stays
+      // "—" when the upstream didn't supply X-Tcp-Mss[-Server].
+      if (result.tcp.mss) {
+        const mss = parseInt(result.tcp.mss, 10);
+        if (Number.isFinite(mss) && mss > 0) {
+          setTimingCell(`mss-${stack}`, `${mss}b`);
+        }
       }
     }
   }

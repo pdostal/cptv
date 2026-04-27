@@ -63,6 +63,7 @@ def test_timing_echo_exposes_timing_headers(client: TestClient):
         "X-Tcp-Rtt-Us",
         "X-Tcp-Rttvar-Us",
         "X-Tcp-Mss",
+        "X-Tcp-Mss-Server",
     ):
         assert name in expose, name
 
@@ -159,6 +160,61 @@ async def test_aggregated_text_omits_tcp_line_when_headers_missing(
     assert "TCP IPv6" not in r.text
 
 
+async def test_aggregated_json_includes_tcp_without_mss_on_stock_nginx(
+    loopback_client: httpx.AsyncClient,
+):
+    """Stock nginx setup ships RTT/RTTvar but not MSS — RTT row still works."""
+    headers = {
+        **V4,
+        "X-Tcp-Rtt-Us": "24000",
+        "X-Tcp-Rttvar-Us": "15800",
+        "Accept": "application/json",
+    }
+    r = await loopback_client.get("/", headers=headers)
+    assert r.status_code == 200
+    tcp = r.json()["timing"]["tcp"]
+    assert tcp == {
+        "rtt_ms": 24.0,
+        "rttvar_ms": 15.8,
+        "mss_bytes": None,
+        "protocol": "IPv4",
+    }
+
+
+async def test_aggregated_text_omits_mss_when_only_rtt_present(
+    loopback_client: httpx.AsyncClient,
+):
+    """Stock nginx (no Lua) — TCP line shows RTT but no MSS suffix."""
+    headers = _curl(
+        {
+            **V4,
+            "X-Tcp-Rtt-Us": "24000",
+            "X-Tcp-Rttvar-Us": "15800",
+        }
+    )
+    r = await loopback_client.get("/", headers=headers)
+    body = r.text
+    assert "TCP IPv4" in body
+    assert "24.0ms" in body
+    assert "MSS" not in body  # MSS suffix dropped when missing
+
+
+async def test_aggregated_json_prefers_server_mss_header(
+    loopback_client: httpx.AsyncClient,
+):
+    """When both X-Tcp-Mss and X-Tcp-Mss-Server are sent, server wins."""
+    headers = {
+        **V4,
+        "X-Tcp-Rtt-Us": "24000",
+        "X-Tcp-Rttvar-Us": "15800",
+        "X-Tcp-Mss": "1428",
+        "X-Tcp-Mss-Server": "1448",
+        "Accept": "application/json",
+    }
+    r = await loopback_client.get("/", headers=headers)
+    assert r.json()["timing"]["tcp"]["mss_bytes"] == 1448
+
+
 # ---------- spoof protection: non-loopback peers can't inject X-Tcp-* ----------
 
 
@@ -175,3 +231,19 @@ async def test_index_strips_spoofable_headers_from_non_loopback_peer(
     assert body["timing"]["tcp"] is None, (
         "non-loopback peers must not be able to spoof X-Tcp-* timing headers"
     )
+
+
+async def test_index_strips_server_mss_header_from_non_loopback_peer(
+    public_client: httpx.AsyncClient,
+):
+    """X-Tcp-Mss-Server is also stripped from untrusted peers."""
+    headers = {
+        **V4,
+        "X-Tcp-Rtt-Us": "24000",
+        "X-Tcp-Rttvar-Us": "15800",
+        "X-Tcp-Mss-Server": "1448",
+        "Accept": "application/json",
+    }
+    r = await public_client.get("/", headers=headers)
+    body = r.json()
+    assert body["timing"]["tcp"] is None

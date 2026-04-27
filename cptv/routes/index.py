@@ -65,10 +65,14 @@ async def _collect(request: Request) -> dict:
     elapsed = elapsed_ms_so_far(request)
     rtt_ms = round(elapsed, 1) if elapsed is not None else None
 
-    # Visitor-side TCP RTT/RTTvar/MSS, populated by the nginx Lua/njs
-    # snippet (see README "Nginx configuration"). None when the headers
-    # are absent (local dev, or nginx without the snippet) — the UI
-    # then hides the per-stack TCP rows for the *current* stack.
+    # Visitor-side TCP RTT / RTTvar / MSS. RTT and RTTvar are populated
+    # on any nginx via $tcpinfo_rtt / $tcpinfo_rttvar; MSS is optional
+    # and requires OpenResty + a Lua FFI snippet (see README
+    # "Visitor TCP timing & MSS"). When the RTT headers are absent
+    # (local dev, or nginx without the snippet) the whole tcp_payload
+    # is None and the per-stack TCP rows hide for the *current* stack;
+    # when only MSS is missing, mss_bytes is None and the MSS row
+    # renders "—" while RTT/RTTvar still show.
     tcp_info = timing_service.parse_tcp_info_headers(request.headers)
     tcp_payload = (
         None
@@ -229,11 +233,14 @@ def _text_aggregated(data: dict) -> str:
     if tcp is not None:
         # Per-stack TCP stats for the *current* stack only. The other
         # stack would require a separate request to the other subdomain;
-        # curl users can do that explicitly.
+        # curl users can do that explicitly. MSS is optional (OpenResty
+        # + Lua FFI); when missing we drop it from the line instead of
+        # printing "MSS Noneb".
         proto = tcp.get("protocol") or "TCP"
-        lines.append(
-            f"   TCP {proto}:  {tcp['rtt_ms']}ms [±{tcp['rttvar_ms']}ms], MSS {tcp['mss_bytes']}b"
-        )
+        line = f"   TCP {proto}:  {tcp['rtt_ms']}ms [±{tcp['rttvar_ms']}ms]"
+        if tcp.get("mss_bytes") is not None:
+            line += f", MSS {tcp['mss_bytes']}b"
+        lines.append(line)
 
     return "\n".join(lines)
 

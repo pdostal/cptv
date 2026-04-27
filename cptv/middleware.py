@@ -21,11 +21,14 @@ _REWRITE_PREFIXES = ("ipv4", "ipv6")
 # Headers the app trusts only from upstream nginx. If anything other
 # than a loopback peer sends them, we strip them so a malicious client
 # cannot spoof TCP RTT/MSS readings into the page when the app is
-# (mis)deployed without a reverse proxy. See cptv/services/timing.py.
+# (mis)deployed without a reverse proxy. See cptv/services/timing.py
+# for what each header carries; both X-Tcp-Mss and X-Tcp-Mss-Server are
+# stripped because the parser accepts either name.
 _TRUSTED_UPSTREAM_HEADERS = (
     "x-tcp-rtt-us",
     "x-tcp-rttvar-us",
     "x-tcp-mss",
+    "x-tcp-mss-server",
 )
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 

@@ -122,6 +122,6 @@ def add_public_cors(response: Response) -> Response:
     #     nginx Lua/njs snippet from the visitor's TCP socket. See the
     #     "Nginx configuration" section of README.md.
     response.headers["Access-Control-Expose-Headers"] = (
-        "X-Response-Time-Ms, X-Tcp-Rtt-Us, X-Tcp-Rttvar-Us, X-Tcp-Mss"
+        "X-Response-Time-Ms, X-Tcp-Rtt-Us, X-Tcp-Rttvar-Us, X-Tcp-Mss, X-Tcp-Mss-Server"
     )
     return response
