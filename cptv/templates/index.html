@@ -129,9 +129,9 @@ data.quick_links %}
                 id="request-geolocation"
                 class="secondary outline">
           {% if request and request.state.subdomain == "secure" %}
-          📍 Compare with your real location
+          📍 Compare geoIP with browser geolocation data
           {% else %}
-          🔒 Switch to HTTPS to compare
+          🔒 Switch to HTTPS to get browser geolocation data
           {% endif %}
         </button>
       </p>

@@ -1063,6 +1063,13 @@
     // (status / coords / error). Keeps the card clean before any click.
     out.hidden = false;
     out.textContent = "requesting…";
+    // Hide the button on any final state (success or error). The user
+    // has used the prompt; re-clicking would just re-trigger and
+    // clutter the card. A page reload is the explicit retry path.
+    const hideButton = () => {
+      const btn = document.getElementById("request-geolocation");
+      if (btn) btn.hidden = true;
+    };
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude, accuracy } = pos.coords;
@@ -1074,9 +1081,11 @@
         // the user can visually compare the GeoIP estimate with their
         // real position.
         setBrowserPin(latitude, longitude, accuracy);
+        hideButton();
       },
       (err) => {
         out.textContent = `denied or unavailable (${err.message})`;
+        hideButton();
       },
       { timeout: 10000, maximumAge: 0 },
     );
