@@ -437,15 +437,24 @@ When the headers are present, the Timing card shows `IPv4 TCP Stack: 24.0ms [±1
 
 #### RTT + RTTvar — works on any nginx (no extra modules)
 
-Linux nginx exposes `$tcpinfo_rtt`, `$tcpinfo_rttvar`, `$tcpinfo_snd_cwnd`, and `$tcpinfo_rcv_space` as built-in variables (see [`ngx_http_core_module`](https://nginx.org/en/docs/http/ngx_http_core_module.html#var_tcpinfo_rtt)). They read straight from `getsockopt(TCP_INFO)` on the visitor's accepted socket, so they're always the *visitor's* numbers, not loopback ones. Add two lines to the `cptv-proxy.conf` snippet:
+Linux nginx exposes `$tcpinfo_rtt`, `$tcpinfo_rttvar`, `$tcpinfo_snd_cwnd`, and `$tcpinfo_rcv_space` as built-in variables (see [`ngx_http_core_module`](https://nginx.org/en/docs/http/ngx_http_core_module.html#var_tcpinfo_rtt)). They read straight from `getsockopt(TCP_INFO)` on the visitor's accepted socket, so they're always the *visitor's* numbers, not loopback ones.
+
+The home-page JS reads these from the **response** of `/timing/echo`, while the aggregate `/?format=json` and curl plain-text paths read them from the **request** the Python app receives. Both directions are required, and they're independent: `proxy_set_header` writes the request side, `add_header` writes the response side. Append four lines to the `cptv-proxy.conf` snippet:
 
 ```nginx
-# /etc/nginx/snippets/cptv-proxy.conf — append to the existing block:
+# /etc/nginx/snippets/cptv-proxy.conf — append to the existing block.
+# Request side: feeds /aggregate JSON + curl plain-text via Python.
 proxy_set_header   X-Tcp-Rtt-Us              $tcpinfo_rtt;
 proxy_set_header   X-Tcp-Rttvar-Us           $tcpinfo_rttvar;
+# Response side: read by the home-page JS from /timing/echo.
+# `always` is required so 304 / 4xx responses still carry the headers.
+add_header         X-Tcp-Rtt-Us              $tcpinfo_rtt    always;
+add_header         X-Tcp-Rttvar-Us           $tcpinfo_rttvar always;
 ```
 
-That's it for RTT and RTTvar. Reload nginx and the per-stack `IPv4 / IPv6 TCP Stack` rows populate on the next page load. No location-specific config needed; the snippet is included by every cptv vhost. This works on stock distro nginx and OpenResty alike.
+Reload nginx and the per-stack `IPv4 / IPv6 TCP Stack` rows populate on the next page load. This works on stock distro nginx and OpenResty alike.
+
+> **Nginx `add_header` inheritance gotcha:** if any `location {}` (or any block deeper than where you place these directives) declares its own `add_header`, **all** parent `add_header` directives are silently dropped at that scope. If you have other `add_header` lines in the cptv vhost (e.g. `Strict-Transport-Security` on `secure.<domain>`), put the timing `add_header`s in the same scope, or repeat them.
 
 #### MSS — requires OpenResty (lua-nginx-module + lua-resty-core)
 
@@ -538,10 +547,10 @@ The app strips `X-Tcp-Rtt-Us`, `X-Tcp-Rttvar-Us`, `X-Tcp-Mss`, and `X-Tcp-Mss-Se
 
 #### Verifying the deployment
 
-After reloading OpenResty, hit `/timing/echo` and look for the headers:
+After reloading OpenResty, hit `/timing/echo` and look for the response headers. Note `-D - -o /dev/null` rather than `-I`/`-sI`: `/timing/echo` only accepts `GET`, so `HEAD` requests get `405 Method Not Allowed` and you'd see no `X-Tcp-*` headers at all.
 
 ```sh
-curl -sI http://localhost/timing/echo \
+curl -s -D - -o /dev/null http://localhost/timing/echo \
   | grep -iE 'x-tcp-|x-response-time'
 # X-Response-Time-Ms: 0.4
 # X-Tcp-Rtt-Us: 24587
@@ -549,7 +558,7 @@ curl -sI http://localhost/timing/echo \
 # X-Tcp-Mss-Server: 1448
 ```
 
-If `X-Tcp-Rtt-Us` is missing, the `proxy_set_header` lines aren't being included. If only MSS is missing, the `init_by_lua_block` or `header_filter_by_lua_block` errored at startup — check `/var/log/nginx/error.log` (or wherever your OpenResty logs go) for `cptv: ffi.cdef failed`.
+If `X-Tcp-Rtt-Us` is missing from the **response**, you've added the `proxy_set_header` lines but not the `add_header` lines (or another `add_header` deeper in the location is shadowing them — see the inheritance gotcha above). If only MSS is missing, the `init_by_lua_block` or `header_filter_by_lua_block` errored at startup — check `/var/log/nginx/error.log` (or wherever your OpenResty logs go) for `cptv: ffi.cdef failed`.
 
 Enable the site:
 
