@@ -1,7 +1,13 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- stage 1: build frontend assets ----
-FROM docker.io/library/node:22-alpine AS assets
+# Pinned to $BUILDPLATFORM (the runner's native arch) so multi-arch builds
+# don't run npm under QEMU emulation — that combination has been observed
+# to hang for >5 minutes on linux/arm64 in CI. The output of this stage is
+# a directory of static JS/CSS/PNG files that are byte-identical regardless
+# of build host architecture, so the COPY --from=assets in the runtime
+# stage works unchanged for every target platform.
+FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS assets
 WORKDIR /build
 COPY package.json package-lock.json* ./
 RUN npm ci || npm install
