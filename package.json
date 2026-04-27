@@ -1,6 +1,6 @@
 {
   "name": "cptv",
-  "version": "0.1.11",
+  "version": "0.5.0",
   "private": true,
   "description": "CaPTiVe — self-hosted network diagnostics. Frontend assets (HTMX + Pico CSS) and JS linting.",
   "type": "module",
@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@picocss/pico": "^2.0.6",
-    "htmx.org": "^2.0.10"
+    "htmx.org": "^2.0.10",
+    "leaflet": "^1.9.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

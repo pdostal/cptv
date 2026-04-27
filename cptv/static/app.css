@@ -32,6 +32,33 @@
   margin: 0;
 }
 
+/* Two-column layout for the Geolocation card: text on the left, OSM
+   map on the right. Single column (text on top, map below) on narrow
+   viewports — the map is the more bandwidth-heavy element and is the
+   first thing to wrap below the fold on phones. */
+.cptv-geo-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+@media (min-width: 48rem) {
+  .cptv-geo-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+    align-items: start;
+  }
+}
+#geo-map {
+  height: 220px;
+  width: 100%;
+  border-radius: var(--pico-border-radius, 0.25rem);
+  background: var(--pico-muted-border-color, #ddd);
+}
+.cptv-map-attrib {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--pico-muted-color, #777);
+}
+
 /* The request-headers dump in the request-inspection panel can have
    long header values; let them wrap so they don't blow out the card. */
 .cptv-headers-dump {
@@ -174,13 +201,6 @@ details summary:not(.cptv-nav-toggle)::-webkit-details-marker {
    On these inline link-summaries it just adds noise; hide it. */
 details summary:not(.cptv-nav-toggle)::after {
   display: none;
-}
-
-/* Probe protocol badge next to dual-stack rows ("via http" / "via https"). */
-.cptv-probe-via {
-  margin-left: 0.4rem;
-  color: var(--pico-muted-color, #777);
-  font-style: italic;
 }
 
 /* IP addresses are long (especially IPv6); allow them to wrap mid-string
