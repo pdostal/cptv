@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from cptv import __version__
 from cptv.middleware import RequestTimingMiddleware, SubdomainMiddleware
 from cptv.routes import asn as asn_routes
 from cptv.routes import dns as dns_routes
@@ -20,6 +21,7 @@ from cptv.routes import index as index_routes
 from cptv.routes import ip as ip_routes
 from cptv.routes import protocol as protocol_routes
 from cptv.routes import rdns as rdns_routes
+from cptv.routes import timing as timing_routes
 from cptv.routes import traceroute as traceroute_routes
 from cptv.services.valkey import close_valkey
 
@@ -39,10 +41,13 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="cptv",
         description="CaPTiVe — self-hosted network diagnostics. See PLAN.md.",
-        version="0.4.1",
+        version=__version__,
         lifespan=lifespan,
     )
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    # Expose the app version to every template (rendered in the footer
+    # next to the GitHub link). Single source of truth: cptv/__init__.py.
+    templates.env.globals["app_version"] = __version__
 
     # Order: timing first (so it brackets everything), subdomain second.
     application.add_middleware(SubdomainMiddleware)
@@ -57,6 +62,7 @@ def create_app() -> FastAPI:
     application.include_router(help_routes._register(templates))
     application.include_router(protocol_routes._register(templates))
     application.include_router(rdns_routes._register(templates))
+    application.include_router(timing_routes._register(templates))
     application.include_router(index_routes._register(templates))
     application.include_router(traceroute_routes._register(templates))
 

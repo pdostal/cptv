@@ -16,6 +16,7 @@ from cptv.services import ip as ip_service
 from cptv.services import protocol as protocol_service
 from cptv.services import rdns as rdns_service
 from cptv.services import redirect_origin as redirect_origin_service
+from cptv.services import timing as timing_service
 
 router = APIRouter()
 
@@ -64,6 +65,26 @@ async def _collect(request: Request) -> dict:
     elapsed = elapsed_ms_so_far(request)
     rtt_ms = round(elapsed, 1) if elapsed is not None else None
 
+    # Visitor-side TCP RTT / RTTvar / MSS. RTT and RTTvar are populated
+    # on any nginx via $tcpinfo_rtt / $tcpinfo_rttvar; MSS is optional
+    # and requires OpenResty + a Lua FFI snippet (see README
+    # "Visitor TCP timing & MSS"). When the RTT headers are absent
+    # (local dev, or nginx without the snippet) the whole tcp_payload
+    # is None and the per-stack TCP rows hide for the *current* stack;
+    # when only MSS is missing, mss_bytes is None and the MSS row
+    # renders "—" while RTT/RTTvar still show.
+    tcp_info = timing_service.parse_tcp_info_headers(request.headers)
+    tcp_payload = (
+        None
+        if tcp_info is None
+        else {
+            "rtt_ms": tcp_info.rtt_ms,
+            "rttvar_ms": tcp_info.rttvar_ms,
+            "mss_bytes": tcp_info.mss_bytes,
+            "protocol": protocol,
+        }
+    )
+
     redirect = redirect_origin_service.detect(request, own_host=domain)
 
     return {
@@ -106,6 +127,10 @@ async def _collect(request: Request) -> dict:
         "timing": {
             "server_timestamp": clock_service.iso_now(),
             "rtt_ms": rtt_ms,
+            # Visitor-side TCP measurements for the *current* stack only.
+            # The other stack's values are filled in client-side by the
+            # dual-stack /timing/echo probe (see static/app.js).
+            "tcp": tcp_payload,
         },
         "http": {
             "version": f"HTTP/{http_version}",
@@ -203,6 +228,19 @@ def _text_aggregated(data: dict) -> str:
         # One leading space (not two) after the ⏱️ emoji so 'RTT' aligns
         # vertically with 'IP', 'Country', 'ASN' on their lines.
         lines.append(f"⏱️ RTT:       {rtt}ms (server-side handling)")
+
+    tcp = data["timing"].get("tcp")
+    if tcp is not None:
+        # Per-stack TCP stats for the *current* stack only. The other
+        # stack would require a separate request to the other subdomain;
+        # curl users can do that explicitly. MSS is optional (OpenResty
+        # + Lua FFI); when missing we drop it from the line instead of
+        # printing "MSS Noneb".
+        proto = tcp.get("protocol") or "TCP"
+        line = f"   TCP {proto}:  {tcp['rtt_ms']}ms [±{tcp['rttvar_ms']}ms]"
+        if tcp.get("mss_bytes") is not None:
+            line += f", MSS {tcp['mss_bytes']}b"
+        lines.append(line)
 
     return "\n".join(lines)
 
