@@ -57,69 +57,103 @@ data.quick_links %}
   <p><code>unknown</code></p>
   {% endif %}
 
+  {# Other-stack address only. The current connection's IP is already shown
+     above, so listing both protocols is noise. When the current protocol
+     is unknown server-side (private/loopback) both rows render as a
+     graceful fallback. rDNS slots are filled async by detectRdns() in
+     app.js once the dual-stack probe knows the IP. #}
   <div id="dual-stack" data-protocol="{{ ip.protocol or '' }}">
-    <p><small>Dual-stack check:</small></p>
-    <ul>
-      <li>
-        IPv4: <code data-ds="ipv4">{{ ip.ipv4 or '…' }}</code>
-        <small data-ds-via="ipv4" class="cptv-probe-via"></small>
-        {# rDNS for this stack \u2014 filled by detectRdns() in app.js once
-           the dual-stack probe knows the IP. Kept empty server-side. #}
-        <br /><small data-ds-rdns="ipv4"></small>
-      </li>
-      <li>
-        IPv6: <code data-ds="ipv6">{{ ip.ipv6 or '…' }}</code>
-        <small data-ds-via="ipv6" class="cptv-probe-via"></small>
-        <br /><small data-ds-rdns="ipv6"></small>
-      </li>
-    </ul>
-    <noscript
-      ><small>Enable JavaScript for dual-stack detection.</small></noscript
-    >
+    {% if ip.protocol != 'IPv4' %}
+    <p>
+      IPv4: <code data-ds="ipv4">{{ ip.ipv4 or '…' }}</code>
+      <br /><small data-ds-rdns="ipv4"></small>
+    </p>
+    {% endif %}
+    {% if ip.protocol != 'IPv6' %}
+    <p>
+      IPv6: <code data-ds="ipv6">{{ ip.ipv6 or '…' }}</code>
+      <br /><small data-ds-rdns="ipv6"></small>
+    </p>
+    {% endif %}
   </div>
 </article>
 
 <article id="geoip-section"{% if not geo %} hidden{% endif %}>
   <header><strong>🌍 Geolocation</strong></header>
-  {# Per-stack rows; JS fills in fresh data fetched from
-     //ipv4.<base>/geoip and //ipv6.<base>/geoip after the dual-stack
-     probe knows the IPs. The SSR fallback below shows the current
-     connection only and gets hidden once JS takes over.
-
-     The whole <article> is hidden when SSR has no GeoIP data (private
-     IP, loopback, missing GeoLite2 DB). app.js un-hides it again if
-     the per-stack probe later finds usable data \u2014 e.g. the request
-     came in via a proxy that mangled X-Forwarded-For but the public
-     ipv4./ipv6. probes succeed. #}
-  <div id="geoip-stacks" hidden></div>
-  <div id="geoip-fallback">
-    {% if geo %}
-    <ul>
-      <li>
-        Country: <strong>{{ geo.country_code or '?' }}</strong> {{ geo.country or
-        '' }}
-      </li>
-      {% if geo.region %}
-      <li>Region: {{ geo.region }}</li>
-      {% endif %}
-      <li>City: {{ geo.city or '—' }}</li>
-      {% if geo.latitude is not none and geo.longitude is not none %}
-      <li>
-        Coords: {{ "%.4f"|format(geo.latitude) }}, {{ "%.4f"|format(geo.longitude)
-        }}
-      </li>
-      {% endif %}
-    </ul>
-    {% endif %}
+  {# Two-column layout: text on the left, OpenStreetMap (Leaflet) on the
+     right. Collapses to text-on-top, map-below on phones — see
+     .cptv-geo-layout in app.css. JS fills in per-stack rows fetched
+     from //ipv4.<base>/geoip and //ipv6.<base>/geoip after the
+     dual-stack probe knows the IPs; the SSR fallback shows the current
+     connection only and gets hidden once JS takes over. The whole
+     <article> is hidden when SSR has no GeoIP data; app.js un-hides it
+     again if the per-stack probe later finds usable data. #}
+  <div class="cptv-geo-layout">
+    <div class="cptv-geo-info">
+      <div id="geoip-stacks" hidden></div>
+      <div id="geoip-fallback">
+        {% if geo %}
+        <ul>
+          <li>
+            Country: <strong>{{ geo.country_code or '?' }}</strong> {{ geo.country or
+            '' }}
+          </li>
+          {% if geo.region %}
+          <li>Region: {{ geo.region }}</li>
+          {% endif %}
+          <li>City: {{ geo.city or '—' }}</li>
+          {% if geo.latitude is not none and geo.longitude is not none %}
+          <li>
+            Coords: {{ "%.4f"|format(geo.latitude) }}, {{ "%.4f"|format(geo.longitude)
+            }}
+          </li>
+          {% endif %}
+        </ul>
+        {% endif %}
+      </div>
+      <details>
+        {# Browsers block navigator.geolocation on insecure origins. On the
+           apex (HTTP) the button becomes a deep link to secure.<base>;
+           the summary makes that explicit. On secure. (already HTTPS)
+           we show neutral copy. See wireGeolocationButton() in app.js. #}
+        {% if request and request.state.subdomain == "secure" %}
+        <summary>Compare with your browser's location</summary>
+        {% else %}
+        <summary>Switch to HTTPS to compare with your browser's location</summary>
+        {% endif %}
+        <button type="button" id="request-geolocation">
+          Show my real location
+        </button>
+        <p id="browser-location"><small>Not requested.</small></p>
+      </details>
+    </div>
+    {# Map column. Hidden when SSR has no coords (private IP, no GeoLite2
+       DB). initGeoMap() in app.js reads data-lat/data-lon and renders a
+       Leaflet map with the GeoIP pin; the browser-geolocation pin is
+       added on top by setBrowserPin() once the user opts in. Tiles come
+       from openstreetmap.org — disclosed in the attribution below. #}
+    <div class="cptv-geo-map-wrap"
+         {% if not geo or geo.latitude is none or geo.longitude is none %}hidden{% endif %}>
+      <div id="geo-map"
+           data-lat="{{ geo.latitude if geo and geo.latitude is not none else '' }}"
+           data-lon="{{ geo.longitude if geo and geo.longitude is not none else '' }}"
+           role="img"
+           aria-label="Map showing your approximate location"></div>
+      <small class="cptv-map-attrib">
+        Map data ©
+        <a href="https://www.openstreetmap.org/copyright"
+           target="_blank" rel="noopener noreferrer">OpenStreetMap</a>
+        contributors. Tiles loaded from <code>tile.openstreetmap.org</code>.
+      </small>
+    </div>
   </div>
-  <details>
-    <summary>Compare with your browser's geolocation</summary>
-    <button type="button" id="request-geolocation">
-      Show my real location
-    </button>
-    <p id="browser-location"><small>Not requested.</small></p>
-  </details>
 </article>
+
+{# Leaflet vendor assets, only loaded on the home page (the map lives
+   here only). Marker images are referenced relatively from
+   leaflet.css; build-assets.mjs vendors them under /static/vendor/images/. #}
+<link rel="stylesheet" href="/static/vendor/leaflet.css" />
+<script src="/static/vendor/leaflet.js" defer></script>
 
 <article id="asn-section"{% if not asn %} hidden{% endif %}>
   <header><strong>🔌 ASN / Network</strong></header>

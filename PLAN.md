@@ -98,8 +98,8 @@ proxy_set_header X-Forwarded-Proto $scheme;
 ### 4.2 Geolocation 🌍
 
 - Country, region, city — queried server-side from the **MaxMind GeoLite2 City** database baked into the image
-- Approximate coordinates shown as a map when JS is available, plain text otherwise
-- Small opt-in **"Show my real location"** button triggers the browser Geolocation API (client-side JS); if granted, shown alongside the GeoIP result for comparison
+- Approximate coordinates shown as an **OpenStreetMap (Leaflet)** map when JS is available, plain text otherwise; map tiles are loaded client-side from `tile.openstreetmap.org` (no API key, no server-side proxy)
+- Small opt-in **"Show my real location"** button triggers the browser Geolocation API (client-side JS); if granted, both the GeoIP estimate and the browser's reported position are shown as separate pins on the same map
 - Browsers block `navigator.geolocation` on insecure origins, and the apex
   `<domain>` is intentionally HTTP. When the JS detects
   `!window.isSecureContext`, the button becomes a deep link that
@@ -992,7 +992,7 @@ This statement is displayed at the bottom of every HTML page and included in the
 ### What stays in your browser
 
 - **Connection history** (IPv4/IPv6 addresses from previous visits, with first/last seen timestamps, ASN, and city) is stored exclusively in **your browser's `localStorage`** under the key `cptv:history:v2` — it never leaves your device and is never sent to the server. A **Clear history** button on the home page wipes it.
-- **Geolocation** (if you opt in via the "Show my real location" button) is used only to display your position on the map in your browser — the coordinates are never transmitted to the server
+- **Geolocation** (if you opt in via the "Show my real location" button) is used only to display your position as a second pin on the OpenStreetMap-backed map in your browser — the coordinates are never transmitted to the cptv server. Map tiles are fetched directly by your browser from `tile.openstreetmap.org`, which sees the tile-level coordinates of your viewport and your IP, per their [tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
 - **DNSSEC test** results are determined entirely client-side by your browser loading an image — no result is reported back to the server
 - **Anycast PoP probe** to `https://1.1.1.1/cdn-cgi/trace` happens directly from your browser — the response is parsed in JavaScript and never seen by us
 - **Resolver whoami probe** to `https://dns.google/resolve?name=o-o.myaddr.l.google.com` happens directly from your browser — the answer is rendered in your DOM and never seen by us
@@ -1001,7 +1001,7 @@ This statement is displayed at the bottom of every HTML page and included in the
 
 ### In plain English
 
-> The server sees your IP address. Everything else — your location, your history, your DNSSEC status — is computed in your browser and stays there. 🔒
+> The server sees your IP address. Everything else — your location, your history, your DNSSEC status — is computed in your browser and stays there. The one third-party fetch is the OpenStreetMap tile request that paints the location pin. 🔒
 
 ---
 

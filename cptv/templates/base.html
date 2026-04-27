@@ -13,8 +13,13 @@
     />
     {# Tells Dark Reader to stay out of the way: cptv already implements
        native dark mode via Pico CSS + prefers-color-scheme + the
-       in-page theme toggle. See https://github.com/darkreader/darkreader
-       for the documented opt-out signal. #}
+       in-page theme toggle. This <meta name="darkreader-lock"> is the
+       documented opt-out signal — see
+       https://github.com/darkreader/darkreader/blob/main/CONTRIBUTING.md#disabling-dark-reader-on-your-site
+       Note: a user's per-site override (Dark Reader popup → toggle "On
+       for this site") takes precedence over this lock. If the page
+       still gets re-tinted, the user must flip the popup toggle off
+       for the cptv domain — there is nothing more the page can do. #}
     <meta name="darkreader-lock" />
     <title>{% block title %}cptv — network diagnostics{% endblock title %}</title>
     <meta
@@ -100,7 +105,8 @@
       <hr />
       <small>
         Server sees only your IP. Everything else — location, history, DNSSEC —
-        is computed in your browser and stays there. 🔒
+        is computed in your browser. The map pin loads tiles from
+        <code>tile.openstreetmap.org</code>. 🔒
         <br />
         cptv by
         <a

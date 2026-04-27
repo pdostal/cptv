@@ -116,7 +116,6 @@
       ["ipv4", `//ipv4.${base}${port}/4?format=text`],
       ["ipv6", `//ipv6.${base}${port}/6?format=text`],
     ];
-    const scheme = window.location.protocol.replace(":", "");
     for (const [stack, url] of probes) {
       try {
         const resp = await fetch(url, { cache: "no-store" });
@@ -125,10 +124,6 @@
         if (!text) continue;
         const el = document.querySelector(`[data-ds="${stack}"]`);
         if (el) el.textContent = text;
-        // Tag the row with the actual scheme used so a curious user
-        // can see whether the probe used http or https. Tiny, inline.
-        const badge = document.querySelector(`[data-ds-via="${stack}"]`);
-        if (badge) badge.textContent = `via ${scheme}`;
       } catch {
         /* silent — dual-stack probe is best-effort */
       }
@@ -370,6 +365,13 @@
       // GeoLite2 DB). Reveal it now that the per-stack probe found
       // usable data.
       qs("#geoip-section")?.removeAttribute("hidden");
+      // Refresh the OSM pin with the freshest per-stack coords. Prefer
+      // the v4 result when both are present and equal; either is fine
+      // when they differ since the map is an approximate visual aid.
+      const freshGeo = geo.ipv4 || geo.ipv6;
+      if (freshGeo && freshGeo.latitude != null && freshGeo.longitude != null) {
+        updateGeoIpPin(freshGeo.latitude, freshGeo.longitude);
+      }
     }
     if (asnStacks && (asn.ipv4 || asn.ipv6)) {
       // Merge when ASN + operator match; the prefix line is rendered
@@ -959,6 +961,74 @@
     renderHistory();
   }
 
+  // ---------- OpenStreetMap rendering ----------
+  // Renders a Leaflet map with the GeoIP pin and, optionally, a second
+  // browser-geolocation pin when the user has opted in. The map module
+  // (leaflet.js) is loaded lazily via a <script defer> in the template,
+  // so window.L may not exist yet at DOMContentLoaded; initGeoMap()
+  // gracefully no-ops in that case and the map simply stays blank.
+  let _geoMap = null;
+  let _geoIpMarker = null;
+  let _geoBrowserMarker = null;
+
+  function initGeoMap() {
+    const el = document.getElementById("geo-map");
+    if (!el || !window.L) return null;
+    const lat = parseFloat(el.dataset.lat);
+    const lon = parseFloat(el.dataset.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    // scrollWheelZoom off so the map doesn't hijack page scrolling on
+    // mobile; users can still drag-pan and use the +/- controls.
+    _geoMap = window.L.map(el, { zoomControl: true, scrollWheelZoom: false }).setView(
+      [lat, lon],
+      8,
+    );
+    // Attribution rendered outside the map (see .cptv-map-attrib in the
+    // template) so it survives regardless of the tile provider, so we
+    // pass an empty string here to suppress Leaflet's default control.
+    window.L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: "",
+    }).addTo(_geoMap);
+    _geoIpMarker = window.L.marker([lat, lon], { title: "GeoIP estimate" })
+      .addTo(_geoMap)
+      .bindPopup("GeoIP estimate");
+    return _geoMap;
+  }
+
+  function updateGeoIpPin(lat, lon) {
+    if (!_geoMap || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (_geoIpMarker) _geoMap.removeLayer(_geoIpMarker);
+    _geoIpMarker = window.L.marker([lat, lon], { title: "GeoIP estimate" })
+      .addTo(_geoMap)
+      .bindPopup("GeoIP estimate");
+    _fitGeoBounds();
+  }
+
+  function setBrowserPin(lat, lon, accuracy) {
+    if (!_geoMap || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (_geoBrowserMarker) _geoMap.removeLayer(_geoBrowserMarker);
+    // Distinguish the browser pin from the default GeoIP pin via a
+    // coloured circle marker so the two are obviously different at a
+    // glance, even without opening the popups.
+    _geoBrowserMarker = window.L.circleMarker([lat, lon], {
+      radius: 8,
+      color: "#0050b8",
+      weight: 2,
+      fillOpacity: 0.5,
+    })
+      .addTo(_geoMap)
+      .bindPopup(`Browser location (±${Math.round(accuracy)} m)`);
+    _fitGeoBounds();
+  }
+
+  function _fitGeoBounds() {
+    const layers = [_geoIpMarker, _geoBrowserMarker].filter(Boolean);
+    if (layers.length < 2) return;
+    const group = window.L.featureGroup(layers);
+    _geoMap.fitBounds(group.getBounds().pad(0.3));
+  }
+
   // ---------- browser geolocation (opt-in) ----------
   // Browsers refuse navigator.geolocation on insecure origins (cptv.cz is
   // intentionally HTTP). When that's the case we don't try the API at all
@@ -976,6 +1046,10 @@
         const code = document.createElement("code");
         code.textContent = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
         out.replaceChildren(code, document.createTextNode(` (±${Math.round(accuracy)} m)`));
+        // Drop a second pin on the OSM map (if it's been initialised) so
+        // the user can visually compare the GeoIP estimate with their
+        // real position.
+        setBrowserPin(latitude, longitude, accuracy);
       },
       (err) => {
         out.textContent = `denied or unavailable (${err.message})`;
@@ -1022,6 +1096,7 @@
   document.addEventListener("DOMContentLoaded", async () => {
     checkClockSkew();
     checkDnssec();
+    initGeoMap(); // No-op when Leaflet missing or coords absent.
     wireGeolocationButton();
     wireHistoryClearButton();
     detectAnycastPop();
