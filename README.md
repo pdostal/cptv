@@ -18,8 +18,12 @@ The application is **domain-agnostic** — nothing about `cptv.cz` is hardcoded.
   - [2. Load and start the units](#2-load-and-start-the-units)
   - [3. Enable Podman auto-update](#3-enable-podman-auto-update)
 - [nginx reverse proxy](#nginx-reverse-proxy)
-  - [`/etc/nginx/snippets/cptv-proxy.conf`](#etcnginxsnippetscptv-proxyconf)
-  - [`/etc/nginx/sites-available/cptv.conf`](#etcnginxsites-availablecptvconf)
+  - [`/etc/nginx/nginx.conf` — Lua FFI for visitor TCP MSS (OpenResty only)](#etcnginxnginxconf--lua-ffi-for-visitor-tcp-mss-openresty-only)
+  - [`/etc/nginx/snippets/cptv-proxy.conf` — shared upstream + timing headers](#etcnginxsnippetscptv-proxyconf--shared-upstream--timing-headers)
+  - [`/etc/nginx/sites-available/cptv.conf` — vhost config](#etcnginxsites-availablecptvconf--vhost-config)
+  - [Verifying timing headers](#verifying-timing-headers)
+  - [Spoof protection](#spoof-protection)
+  - [About per-protocol probe subdomains](#about-per-protocol-probe-subdomains)
 - [Certbot (nginx plugin)](#certbot-nginx-plugin)
 - [Connection protocol probe](#connection-protocol-probe)
 - [Building locally](#building-locally)
@@ -282,17 +286,48 @@ OnCalendar=*-*-* 04:00:00
 
 ## nginx reverse proxy
 
-nginx handles TLS termination, subdomain routing, and header injection. The base domain is passed to the app via the `X-Base-Domain` header — this is how the app stays domain-agnostic.
+nginx (or OpenResty) handles TLS termination, subdomain routing, and header injection. The base domain is passed to the app via the `X-Base-Domain` header so the app stays domain-agnostic.
 
-### `/etc/nginx/snippets/cptv-proxy.conf`
+Three files are involved (replace `cptv.example.com` with your domain throughout):
 
-The same `proxy_pass` + `proxy_set_header` block lives in every cptv vhost. Extract it into a snippet so each vhost is one `include` line:
+### `/etc/nginx/nginx.conf` — Lua FFI for visitor TCP MSS (OpenResty only)
+
+The Timing card's `TCP MSS` row needs `getsockopt(IPPROTO_TCP, TCP_MAXSEG)` on the visitor's socket. `tcpi_advmss` has no built-in nginx variable, so this requires [OpenResty](https://openresty.org/) (a drop-in nginx replacement that bundles `lua-nginx-module`, `lua-resty-core`, and LuaJIT). On stock distro nginx, skip this section — RTT/RTTvar still populate, only MSS stays `—`.
+
+Add this once inside the `http {}` block of `/etc/nginx/nginx.conf`. Field order in the structs matches upstream nginx 1.21–1.27.
 
 ```nginx
-# Shared upstream config for cptv. Include this from every vhost
-# location block. The connection-protocol headers are essential —
-# uvicorn always sees HTTP/1.1 from the loopback hop, so the app
-# reads them to populate data["protocol"] and the /protocol endpoint.
+# /etc/nginx/nginx.conf — inside http { ... }
+init_by_lua_block {
+    local ffi = require "ffi"
+    local ok, err = pcall(ffi.cdef, [[
+        typedef intptr_t        ngx_int_t;
+        typedef uintptr_t       ngx_uint_t;
+        typedef struct ngx_connection_s ngx_connection_t;
+        struct ngx_connection_s {
+            void *data; void *read; void *write; int fd;
+        };
+        typedef struct {
+            ngx_uint_t signature;
+            ngx_connection_t *connection;
+        } ngx_http_request_t_partial;
+        int getsockopt(int sockfd, int level, int optname,
+                       void *optval, unsigned int *optlen);
+    ]])
+    if not ok and not string.find(tostring(err), "redefined", 1, true) then
+        ngx.log(ngx.ERR, "cptv: ffi.cdef failed: ", err)
+    end
+}
+```
+
+### `/etc/nginx/snippets/cptv-proxy.conf` — shared upstream + timing headers
+
+One snippet, included by every cptv vhost. Drop the `header_filter_by_lua_block` if you're on stock nginx without Lua.
+
+```nginx
+# Shared upstream config for cptv. The connection-protocol headers are
+# essential — uvicorn always sees HTTP/1.1 from the loopback hop, so
+# the app reads them to populate /protocol.
 proxy_pass         http://127.0.0.1:8000;
 proxy_set_header   Host                       $host;
 proxy_set_header   X-Base-Domain              $host_base_domain;
@@ -303,99 +338,90 @@ proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
 proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
 proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
 
-# Visitor-side TCP RTT and RTT variance from kernel TCP_INFO. Built-in
-# nginx variables on Linux; no extra modules required. The Python app
-# parses these into the Timing card. See "Visitor TCP timing & MSS"
-# below for the optional MSS header (which needs OpenResty).
+# Visitor TCP RTT/RTTvar from kernel TCP_INFO. Both directions: the
+# request side feeds /?format=json + curl plain text via Python; the
+# response side feeds the home-page JS reading /timing/echo.
+# `always` is required so 304 / 4xx still carry the headers.
 proxy_set_header   X-Tcp-Rtt-Us               $tcpinfo_rtt;
 proxy_set_header   X-Tcp-Rttvar-Us            $tcpinfo_rttvar;
+add_header         X-Tcp-Rtt-Us               $tcpinfo_rtt    always;
+add_header         X-Tcp-Rttvar-Us            $tcpinfo_rttvar always;
+
+# Visitor TCP MSS via OpenResty Lua FFI (omit on stock nginx).
+header_filter_by_lua_block {
+    local ffi  = require "ffi"
+    local base = require "resty.core.base"
+    local r = base.get_request()
+    if not r then return end
+    local req = ffi.cast("ngx_http_request_t_partial*", r)
+    if req == nil or req.connection == nil then return end
+    local fd = req.connection.fd
+    if fd <= 0 then return end
+    local val = ffi.new("int[1]")
+    local len = ffi.new("unsigned int[1]", ffi.sizeof("int"))
+    if ffi.C.getsockopt(fd, 6, 2, val, len) == 0 then  -- IPPROTO_TCP=6, TCP_MAXSEG=2
+        ngx.header["X-Tcp-Mss-Server"] = tostring(val[0])
+    end
+}
 ```
 
-### `/etc/nginx/sites-available/cptv.conf`
+> **`add_header` inheritance gotcha:** if any deeper `location {}` declares its own `add_header`, **all** parent `add_header` directives are silently dropped at that scope. If you have other `add_header` lines in the same vhost (e.g. `Strict-Transport-Security`), repeat the timing ones at that scope.
 
-Replace `cptv.example.com` with your actual domain throughout.
+### `/etc/nginx/sites-available/cptv.conf` — vhost config
+
+Plain HTTP on apex (captive-portal-friendly), HTTP+HTTPS on `ipv4.` / `ipv6.` (the dual-stack probe needs both schemes), HTTPS-only on `secure.` (HTTP/2 + HTTP/3 for protocol probes).
 
 ```nginx
-# Extract the base domain (strip www. prefix if present)
 map $host $host_base_domain {
     default         cptv.example.com;
     ~^www\.(.+)$    $1;
 }
 
-# ---- Plain HTTP: apex + www ----
+# Apex + www: plain HTTP only. HTTPS on apex redirects down to HTTP
+# so captive portals don't trip on cert errors.
 server {
     listen 80;
     listen [::]:80;
     server_name cptv.example.com www.cptv.example.com;
-
-    location / {
-        include snippets/cptv-proxy.conf;
-    }
+    location / { include snippets/cptv-proxy.conf; }
 }
-
-# ---- HTTPS on apex → redirect down to HTTP (captive-portal-friendly) ----
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
     server_name cptv.example.com www.cptv.example.com;
-
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
-
     return 301 http://$host$request_uri;
 }
 
-# ---- ipv4. + ipv6.: HTTP (no redirect) ----
-# DNS A only on ipv4., AAAA only on ipv6. \u2014 the dual-stack probe needs
-# both subdomains reachable on whichever scheme the parent page uses
-# (HTTP from the apex, HTTPS from secure.<domain> due to mixed-content
-# rules). Both subdomains share identical config, so one server {}
-# pair covers both. Do NOT redirect HTTP \u2192 HTTPS here.
+# ipv4. + ipv6.: HTTP and HTTPS, both serve the proxy directly. DNS A
+# only on ipv4., AAAA only on ipv6. Do NOT redirect HTTP -> HTTPS.
 server {
     listen 80;
     listen [::]:80;
     server_name ipv4.cptv.example.com ipv6.cptv.example.com;
-
-    location / {
-        include snippets/cptv-proxy.conf;
-    }
+    location / { include snippets/cptv-proxy.conf; }
 }
-
-# ---- ipv4. + ipv6.: HTTPS (no redirect) ----
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
     server_name ipv4.cptv.example.com ipv6.cptv.example.com;
-
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
-
-    location / {
-        include snippets/cptv-proxy.conf;
-    }
+    location / { include snippets/cptv-proxy.conf; }
 }
 
-# ---- secure.<domain>: HTTP → HTTPS redirect ----
+# secure.<domain>: HTTPS-only, advertises HTTP/2 + HTTP/3. Required
+# for `curl --http3 https://secure.<domain>/protocol`. Needs nginx
+# >=1.25 with --with-http_v3_module and UDP/443 open in the firewall.
+# Drop the two `quic` listen lines and Alt-Svc header if not built.
 server {
     listen 80;
     listen [::]:80;
     server_name secure.cptv.example.com;
-
     return 301 https://$host$request_uri;
 }
-
-# ---- secure.<domain>: HTTPS + HTTP/2 + HTTP/3 (TLS enforced) ----
-# This is where the /protocol endpoint lives. Negotiating up to HTTP/3
-# here lets `curl --http3 https://secure.<domain>/protocol` work.
-#
-# Requires nginx >= 1.25 built with `--with-http_v3_module`. Verify
-# with `nginx -V 2>&1 | tr ' ' '\n' | grep http_v3`. If the module
-# isn't built, drop the two `listen ... quic` lines and the
-# Alt-Svc header — h2 + h1 still work.
-#
-# Firewall: open UDP/443 in addition to TCP/443 — HTTP/3 rides QUIC
-# over UDP. Without it browsers silently fall back to h2.
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
@@ -403,151 +429,23 @@ server {
     listen [::]:443 quic reuseport;
     http2 on;
     server_name secure.cptv.example.com;
-
     ssl_certificate     /etc/letsencrypt/live/cptv.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/cptv.example.com/privkey.pem;
-
     add_header Alt-Svc 'h3=":443"; ma=86400' always;
-
-    location / {
-        include snippets/cptv-proxy.conf;
-    }
+    location / { include snippets/cptv-proxy.conf; }
 }
 ```
 
-### About per-protocol probe subdomains
+Enable, validate, and reload:
 
-Earlier releases (v0.2.0 – v0.2.8) advertised three extra subdomains — `http1.<domain>`, `http2.<domain>`, `http3.<domain>` — pinned to a single HTTP version each so a JS capability check could test each protocol independently. **They have been removed.**
-
-The reason: nginx's HTTP module has no per-vhost ALPN-pinning directive. `ssl_alpn` exists only in the `stream` module. The closest substitutes — listener-level `http2 on;` and the `quic` listen parameter — control what nginx *advertises*, not what's *enforced*: a client that explicitly downgrades (`curl --http1.1 https://http2.<domain>`) succeeds at the lower version. The "capability" probe was therefore reporting what the client + server *happened to negotiate*, which is exactly what `https://secure.<domain>/protocol` already reports for the current connection.
-
-Maintaining three near-identical subdomains, three certificate SANs, and a JS cross-origin probe to surface that same information was net negative. The current approach: one HTTPS host (`secure.<domain>`) that speaks all three protocols, and `curl --http1.1 / --http2 / --http3 https://secure.<domain>/protocol` for users who want to compare.
-
-### Visitor TCP timing & MSS (optional nginx headers)
-
-The Timing card on the home page shows per-stack visitor-side TCP RTT, RTT variance, and Maximum Segment Size. Because nginx terminates TCP, the Python app cannot read `TCP_INFO` / `TCP_MAXSEG` on the visitor's socket directly — nginx must inject the values as response headers, and the app reads them with no socket access:
-
-```text
-X-Tcp-Rtt-Us:    smoothed RTT estimate    (tcpi_rtt,    microseconds)
-X-Tcp-Rttvar-Us: RTT variance estimate    (tcpi_rttvar, microseconds)
-X-Tcp-Mss:       advertised MSS           (tcpi_advmss, bytes)
+```sh
+ln -s /etc/nginx/sites-available/cptv.conf /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx   # or `openresty`
 ```
 
-When the headers are present, the Timing card shows `IPv4 TCP Stack: 24.0ms [±15.8ms]` and `IPv4 TCP MSS: 1448b` rows for each stack. When absent, only the End-to-End rows (which the browser measures itself via `PerformanceResourceTiming`) populate. The app degrades silently with no errors logged.
+### Verifying timing headers
 
-#### RTT + RTTvar — works on any nginx (no extra modules)
-
-Linux nginx exposes `$tcpinfo_rtt`, `$tcpinfo_rttvar`, `$tcpinfo_snd_cwnd`, and `$tcpinfo_rcv_space` as built-in variables (see [`ngx_http_core_module`](https://nginx.org/en/docs/http/ngx_http_core_module.html#var_tcpinfo_rtt)). They read straight from `getsockopt(TCP_INFO)` on the visitor's accepted socket, so they're always the *visitor's* numbers, not loopback ones.
-
-The home-page JS reads these from the **response** of `/timing/echo`, while the aggregate `/?format=json` and curl plain-text paths read them from the **request** the Python app receives. Both directions are required, and they're independent: `proxy_set_header` writes the request side, `add_header` writes the response side. Append four lines to the `cptv-proxy.conf` snippet:
-
-```nginx
-# /etc/nginx/snippets/cptv-proxy.conf — append to the existing block.
-# Request side: feeds /aggregate JSON + curl plain-text via Python.
-proxy_set_header   X-Tcp-Rtt-Us              $tcpinfo_rtt;
-proxy_set_header   X-Tcp-Rttvar-Us           $tcpinfo_rttvar;
-# Response side: read by the home-page JS from /timing/echo.
-# `always` is required so 304 / 4xx responses still carry the headers.
-add_header         X-Tcp-Rtt-Us              $tcpinfo_rtt    always;
-add_header         X-Tcp-Rttvar-Us           $tcpinfo_rttvar always;
-```
-
-Reload nginx and the per-stack `IPv4 / IPv6 TCP Stack` rows populate on the next page load. This works on stock distro nginx and OpenResty alike.
-
-> **Nginx `add_header` inheritance gotcha:** if any `location {}` (or any block deeper than where you place these directives) declares its own `add_header`, **all** parent `add_header` directives are silently dropped at that scope. If you have other `add_header` lines in the cptv vhost (e.g. `Strict-Transport-Security` on `secure.<domain>`), put the timing `add_header`s in the same scope, or repeat them.
-
-#### MSS — requires OpenResty (lua-nginx-module + lua-resty-core)
-
-`tcpi_advmss` is **not** exposed as a built-in nginx variable, so MSS needs `lua-nginx-module`'s LuaJIT FFI to call `getsockopt(IPPROTO_TCP, TCP_MAXSEG)` on the visitor's connection file descriptor. The standard distribution nginx package on Debian/Ubuntu/Fedora/RHEL does **not** ship Lua. The supported way to add it is [OpenResty](https://openresty.org/), a drop-in nginx replacement that bundles `lua-nginx-module`, `lua-resty-core`, and LuaJIT.
-
-Two important constraints govern the snippet shape:
-
-- The `lua-nginx-module` README states that cosocket APIs are disabled in `set_by_lua*` and `header_filter_by_lua*`. We therefore cannot use `ngx.req.socket():getfd()` from those phases. The supported way to reach the visitor's FD is `lua-resty-core`'s `base.get_request()`, which returns the underlying `ngx_http_request_t*` C pointer; the FD lives at `r->connection->fd`.
-- That requires declaring partial nginx struct layouts via FFI. The layouts below match upstream nginx 1.21+ (the same ABI OpenResty ships). If you run a wildly different nginx fork, the offset of `fd` inside `ngx_connection_t` may differ — the snippet then logs a warning at startup and the MSS row stays empty.
-
-Add this to `/etc/nginx/nginx.conf` inside the `http {}` block (above any `server {}` blocks). Setting it in the `http {}` block compiles the FFI definitions once at startup instead of per request:
-
-```nginx
-# /etc/nginx/nginx.conf — inside http { ... }
-init_by_lua_block {
-    local ffi = require "ffi"
-    -- Partial mirror of the nginx C structs we need to reach the
-    -- visitor's connection file descriptor. Field order must match
-    -- upstream nginx (verified against 1.21–1.27).
-    local ok, err = pcall(ffi.cdef, [[
-        typedef intptr_t        ngx_int_t;
-        typedef uintptr_t       ngx_uint_t;
-        typedef struct ngx_connection_s ngx_connection_t;
-        struct ngx_connection_s {
-            void              *data;
-            void              *read;
-            void              *write;
-            int                fd;
-            /* the rest of the struct is intentionally omitted; we
-               only ever read .fd, which sits at this offset because
-               nginx packs the preceding three pointers tightly. */
-        };
-        typedef struct {
-            ngx_uint_t         signature;
-            ngx_connection_t  *connection;
-            /* rest omitted — we only read .connection. */
-        } ngx_http_request_t_partial;
-        int getsockopt(int sockfd, int level, int optname,
-                       void *optval, unsigned int *optlen);
-    ]])
-    if not ok and not string.find(tostring(err), "redefined", 1, true) then
-        ngx.log(ngx.ERR, "cptv: ffi.cdef failed: ", err)
-    end
-}
-
-# Make $cptv_tcp_mss writable so header_filter_by_lua_block can set it
-# and proxy_set_header can read it. js_var would also work but lua_var
-# (via set_by_lua) keeps the dependency surface small.
-map $host $cptv_tcp_mss { default ""; }
-```
-
-Then in the same `/etc/nginx/snippets/cptv-proxy.conf` you already use, append a `header_filter_by_lua_block` and a `proxy_set_header`:
-
-```nginx
-# /etc/nginx/snippets/cptv-proxy.conf — append after the existing
-# proxy_set_header lines.
-#
-# header_filter_by_lua_block runs after upstream returns headers but
-# BEFORE they're sent to the client, so we can stamp X-Tcp-Mss onto
-# the response. Same phase as set_by_lua but without the cosocket
-# restrictions of set_by_lua.
-header_filter_by_lua_block {
-    local ffi  = require "ffi"
-    local base = require "resty.core.base"
-    local r = base.get_request()
-    if not r then return end
-
-    local req = ffi.cast("ngx_http_request_t_partial*", r)
-    if req == nil or req.connection == nil then return end
-    local fd = req.connection.fd
-    if fd <= 0 then return end
-
-    local IPPROTO_TCP = 6
-    local TCP_MAXSEG  = 2
-    local val = ffi.new("int[1]")
-    local len = ffi.new("unsigned int[1]", ffi.sizeof("int"))
-    if ffi.C.getsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, val, len) == 0 then
-        ngx.header["X-Tcp-Mss-Server"] = tostring(val[0])
-    end
-}
-```
-
-The header above is `X-Tcp-Mss-Server` — the *server-side* MSS, which is what the kernel exposes via `TCP_MAXSEG` on the listening socket. That's the value bgp.tools-style "TCP MSS" rows actually display: the MSS the server advertises, not the client's. The Python app accepts both `X-Tcp-Mss` and `X-Tcp-Mss-Server` (server-side preferred when both are present).
-
-When the FFI layout doesn't match (very old or patched nginx fork), the `header_filter_by_lua_block` logs nothing and the MSS row stays `—`. RTT and RTTvar are unaffected because they go through the simpler `proxy_set_header $tcpinfo_*` path that needs no Lua.
-
-#### Spoof protection
-
-The app strips `X-Tcp-Rtt-Us`, `X-Tcp-Rttvar-Us`, `X-Tcp-Mss`, and `X-Tcp-Mss-Server` from any inbound request whose immediate peer is not loopback (`127.0.0.1`, `::1`, `localhost`). That way a malicious client connecting directly to uvicorn (deployment without a reverse proxy, or a misconfigured one) cannot inject fake values into the Timing card. nginx on the loopback hop is the only sender the app trusts.
-
-#### Verifying the deployment
-
-After reloading OpenResty, hit `/timing/echo` and look for the response headers. Note `-D - -o /dev/null` rather than `-I`/`-sI`: `/timing/echo` only accepts `GET`, so `HEAD` requests get `405 Method Not Allowed` and you'd see no `X-Tcp-*` headers at all.
+After reload, hit `/timing/echo` (use `-D - -o /dev/null`, not `-sI` — the route is `GET`-only and `HEAD` returns 405):
 
 ```sh
 curl -s -D - -o /dev/null http://localhost/timing/echo \
@@ -558,14 +456,15 @@ curl -s -D - -o /dev/null http://localhost/timing/echo \
 # X-Tcp-Mss-Server: 1448
 ```
 
-If `X-Tcp-Rtt-Us` is missing from the **response**, you've added the `proxy_set_header` lines but not the `add_header` lines (or another `add_header` deeper in the location is shadowing them — see the inheritance gotcha above). If only MSS is missing, the `init_by_lua_block` or `header_filter_by_lua_block` errored at startup — check `/var/log/nginx/error.log` (or wherever your OpenResty logs go) for `cptv: ffi.cdef failed`.
+If RTT headers are missing from the response, the `add_header` lines weren't included or got shadowed by a deeper `add_header`. If only MSS is missing, the Lua FFI errored at startup — check `/var/log/nginx/error.log` for `cptv: ffi.cdef failed`.
 
-Enable the site:
+### Spoof protection
 
-```sh
-ln -s /etc/nginx/sites-available/cptv.conf /etc/nginx/sites-enabled/
-nginx -t && systemctl reload nginx
-```
+The app strips `X-Tcp-Rtt-Us`, `X-Tcp-Rttvar-Us`, `X-Tcp-Mss`, and `X-Tcp-Mss-Server` from any inbound request whose immediate peer is not loopback (`127.0.0.1`, `::1`, `localhost`). nginx on the loopback hop is the only sender the app trusts.
+
+### About per-protocol probe subdomains
+
+Earlier releases (v0.2.0 – v0.2.8) advertised `http1.<domain>`, `http2.<domain>`, `http3.<domain>` pinned to a single HTTP version each. **They have been removed.** nginx's HTTP module has no per-vhost ALPN-pinning directive (`ssl_alpn` exists only in the `stream` module), so a client could downgrade explicitly (`curl --http1.1 https://http2.<domain>`) and the probe would lie about what was actually negotiated. The current approach: one HTTPS host (`secure.<domain>`) speaking all three protocols, plus `curl --http1.1 / --http2 / --http3 https://secure.<domain>/protocol` for users who want to compare.
 
 ---
 
