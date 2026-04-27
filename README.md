@@ -302,6 +302,13 @@ proxy_set_header   X-Forwarded-HTTP-Version   $server_protocol;
 proxy_set_header   X-Forwarded-TLS-Version    $ssl_protocol;
 proxy_set_header   X-Forwarded-TLS-Cipher     $ssl_cipher;
 proxy_set_header   X-Forwarded-ALPN           $ssl_alpn_protocol;
+
+# Visitor-side TCP RTT and RTT variance from kernel TCP_INFO. Built-in
+# nginx variables on Linux; no extra modules required. The Python app
+# parses these into the Timing card. See "Visitor TCP timing & MSS"
+# below for the optional MSS header (which needs OpenResty).
+proxy_set_header   X-Tcp-Rtt-Us               $tcpinfo_rtt;
+proxy_set_header   X-Tcp-Rttvar-Us            $tcpinfo_rttvar;
 ```
 
 ### `/etc/nginx/sites-available/cptv.conf`
@@ -418,7 +425,7 @@ Maintaining three near-identical subdomains, three certificate SANs, and a JS cr
 
 ### Visitor TCP timing & MSS (optional nginx headers)
 
-The Timing card on the home page shows per-stack visitor-side TCP RTT, RTT variance, and Maximum Segment Size — like bgp.tools' Timing rows. Because nginx terminates TCP, the Python app cannot read `TCP_INFO` on the visitor's socket directly. Instead, the app reads three response headers that nginx is expected to inject from the visitor's accepted socket:
+The Timing card on the home page shows per-stack visitor-side TCP RTT, RTT variance, and Maximum Segment Size. Because nginx terminates TCP, the Python app cannot read `TCP_INFO` / `TCP_MAXSEG` on the visitor's socket directly — nginx must inject the values as response headers, and the app reads them with no socket access:
 
 ```text
 X-Tcp-Rtt-Us:    smoothed RTT estimate    (tcpi_rtt,    microseconds)
@@ -428,34 +435,64 @@ X-Tcp-Mss:       advertised MSS           (tcpi_advmss, bytes)
 
 When the headers are present, the Timing card shows `IPv4 TCP Stack: 24.0ms [±15.8ms]` and `IPv4 TCP MSS: 1448b` rows for each stack. When absent, only the End-to-End rows (which the browser measures itself via `PerformanceResourceTiming`) populate. The app degrades silently with no errors logged.
 
-`lua-nginx-module` does not expose `TCP_INFO` natively. The two practical paths are:
+#### RTT + RTTvar — works on stock nginx (no extra modules)
 
-- **`lua-nginx-module` + `lua-resty-core` (FFI)**: call `getsockopt(SOL_TCP, TCP_INFO, …)` on the connection FD via LuaJIT's FFI in a `header_filter_by_lua_block`. Nginx's openresty bundle ships the pieces; vanilla distributions need building from source.
-- **`njs` (`ngx_http_js_module`)**: njs exposes `r.connection` but not `tcp_info` as of nginx 1.27; an FFI shim is still needed.
-
-Either way, the snippet must run for the `/timing/echo` location at minimum (the home-page JS reads the headers off the probe responses, not the page itself). Suggested location block:
+Linux nginx exposes `$tcpinfo_rtt`, `$tcpinfo_rttvar`, `$tcpinfo_snd_cwnd`, and `$tcpinfo_rcv_space` as built-in variables (see [`ngx_http_core_module`](https://nginx.org/en/docs/http/ngx_http_core_module.html#var_tcpinfo_rtt)). They read straight from `getsockopt(TCP_INFO)` on the visitor's accepted socket, so they're always the *visitor's* numbers, not loopback ones. Add three lines to the `cptv-proxy.conf` snippet:
 
 ```nginx
-location = /timing/echo {
-    include snippets/cptv-proxy.conf;
-    # Inject visitor TCP_INFO + TCP_MAXSEG into the response.
-    # Implementation depends on your nginx build (lua-resty-core
-    # FFI or njs). The Python app reads three headers:
-    #   X-Tcp-Rtt-Us, X-Tcp-Rttvar-Us, X-Tcp-Mss
-    # When the snippet is absent the rows simply stay "—".
-    header_filter_by_lua_block {
-        -- Pseudocode; replace with your TCP_INFO FFI call.
-        -- local tcpi = require("cptv.tcpinfo").get(ngx.var.connection)
-        -- if tcpi then
-        --     ngx.header["X-Tcp-Rtt-Us"]    = tostring(tcpi.rtt)
-        --     ngx.header["X-Tcp-Rttvar-Us"] = tostring(tcpi.rttvar)
-        --     ngx.header["X-Tcp-Mss"]       = tostring(tcpi.advmss)
-        -- end
-    }
-}
+# /etc/nginx/snippets/cptv-proxy.conf — append to the existing block:
+proxy_set_header   X-Tcp-Rtt-Us              $tcpinfo_rtt;
+proxy_set_header   X-Tcp-Rttvar-Us           $tcpinfo_rttvar;
 ```
 
-Spoofing protection: the app strips these three headers from any inbound request whose immediate peer is not loopback, so a malicious client cannot inject fake values when the deployment forgets the reverse proxy.
+That's it for RTT and RTTvar. Reload nginx and the per-stack `IPv4 / IPv6 TCP Stack` rows populate on the next page load. No location-specific config needed; the snippet is included by every cptv vhost.
+
+#### MSS — requires OpenResty (or another lua-nginx-module nginx)
+
+`tcpi_advmss` is **not** exposed as a built-in nginx variable, so MSS needs `lua-nginx-module`'s FFI to call `getsockopt(IPPROTO_TCP, TCP_MAXSEG)` on the connection's file descriptor. The standard distribution nginx package on Debian/Ubuntu/Fedora/RHEL does **not** ship Lua. The supported way to add it is to install [OpenResty](https://openresty.org/), a drop-in nginx replacement that bundles `lua-nginx-module` + `lua-resty-core` + LuaJIT. (You can keep the same nginx config; OpenResty replaces the binary, not the configuration model.)
+
+Once OpenResty is installed, add this to the same `/etc/nginx/snippets/cptv-proxy.conf`:
+
+```nginx
+# Visitor TCP MSS (requires OpenResty / lua-nginx-module + lua-resty-core).
+# Reads getsockopt(IPPROTO_TCP, TCP_MAXSEG) on the connection FD via LuaJIT
+# FFI and stamps the result onto X-Tcp-Mss. The Python app picks it up
+# from request.headers and renders the per-stack 'TCP MSS' rows.
+#
+# Cost: one syscall per request. The result is request-scoped, so we
+# don't need a shared dict or worker-level cache.
+set_by_lua_block $cptv_tcp_mss {
+    local ffi = require "ffi"
+    pcall(ffi.cdef, [[
+        int getsockopt(int sockfd, int level, int optname,
+                       void *optval, unsigned int *optlen);
+    ]])
+    local IPPROTO_TCP = 6
+    local TCP_MAXSEG  = 2
+    local fd = tonumber(ngx.var.connection) and ngx.req.socket and
+               (function()
+                   local sock, err = ngx.req.socket()
+                   if not sock then return nil end
+                   return sock:getfd and sock:getfd() or nil
+               end)() or nil
+    if not fd or fd < 0 then return "" end
+    local val = ffi.new("int[1]")
+    local len = ffi.new("unsigned int[1]", ffi.sizeof("int"))
+    if ffi.C.getsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, val, len) ~= 0 then
+        return ""
+    end
+    return tostring(val[0])
+}
+proxy_set_header X-Tcp-Mss $cptv_tcp_mss;
+```
+
+When `$cptv_tcp_mss` is empty (e.g. the FFI call failed or you reloaded the snippet on stock nginx without Lua), the `X-Tcp-Mss` header arrives with an empty value and the Python parser treats it as missing. The MSS row then displays `—`; RTT and RTTvar still populate from the previous block.
+
+If you cannot move to OpenResty, the End-to-End and TCP RTT/RTTvar rows still work on stock nginx — only the MSS row stays empty.
+
+#### Spoof protection
+
+The app strips `X-Tcp-Rtt-Us`, `X-Tcp-Rttvar-Us`, and `X-Tcp-Mss` from any inbound request whose immediate peer is not loopback (`127.0.0.1`, `::1`, `localhost`). That way a malicious client connecting directly to uvicorn (deployment without a reverse proxy, or a misconfigured one) cannot inject fake values into the Timing card. nginx on the loopback hop is the only sender the app trusts.
 
 Enable the site:
 
