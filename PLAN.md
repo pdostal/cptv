@@ -100,7 +100,7 @@ proxy_set_header X-Forwarded-Proto $scheme;
 
 - Country, region, city — queried server-side from the **MaxMind GeoLite2 City** database baked into the image
 - Approximate coordinates shown as an **OpenStreetMap (Leaflet)** map when JS is available, plain text otherwise; map tiles are loaded client-side from `tile.openstreetmap.org` (no API key, no server-side proxy)
-- Single **"📍 Compare geoIP with browser geolocation data"** button (apex copy: **"🔒 Switch to HTTPS to get browser geolocation data"**) — one click is enough. On `secure.` it triggers the browser Geolocation API directly; if granted, the browser's reported position is shown as a second pin on the same map alongside the GeoIP estimate. The button hides itself once the user has clicked through (success or denial), so the card stays clean.
+- Single **"📍 Compare IP and browser geo data"** button (apex copy: **"🔒 Switch to HTTPS to get browser geolocation data"**) — one click is enough. On `secure.` it triggers the browser Geolocation API directly; if granted, the browser's reported position is shown as a second pin on the same map alongside the GeoIP estimate. The button hides itself once the user has clicked through (success or denial), so the card stays clean.
 - Browsers block `navigator.geolocation` on insecure origins, and the apex
   `<domain>` is intentionally HTTP. When the JS detects
   `!window.isSecureContext`, the button becomes a deep link that
@@ -993,7 +993,7 @@ This statement is displayed at the bottom of every HTML page and included in the
 ### What stays in your browser
 
 - **Connection history** (IPv4/IPv6 addresses from previous visits, with first/last seen timestamps, ASN, and city) is stored exclusively in **your browser's `localStorage`** under the key `cptv:history:v2` — it never leaves your device and is never sent to the server. A **Clear history** button on the home page wipes it.
-- **Geolocation** (if you opt in via the "Compare geoIP with browser geolocation data" button) is used only to display your position as a second pin on the OpenStreetMap-backed map in your browser — the coordinates are never transmitted to the cptv server. Map tiles are fetched directly by your browser from `tile.openstreetmap.org`
+- **Geolocation** (if you opt in via the "Compare IP and browser geo data" button) is used only to display your position as a second pin on the OpenStreetMap-backed map in your browser — the coordinates are never transmitted to the cptv server. Map tiles are fetched directly by your browser from `tile.openstreetmap.org`
 - **DNSSEC test** results are determined entirely client-side by your browser loading an image — no result is reported back to the server
 - **Anycast PoP probe** to `https://1.1.1.1/cdn-cgi/trace` happens directly from your browser — the response is parsed in JavaScript and never seen by us
 - **Resolver whoami probe** to `https://dns.google/resolve?name=o-o.myaddr.l.google.com` happens directly from your browser — the answer is rendered in your DOM and never seen by us

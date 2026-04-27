@@ -423,8 +423,8 @@
     if (!cell) return;
     cell.textContent = text;
     if (title) cell.title = title;
-    const dl = qs("#timing-stacks");
-    if (dl) dl.hidden = false;
+    const list = qs("#timing-stacks");
+    if (list) list.hidden = false;
   }
 
   // Run K probes against //<stack>.<base>:port/timing/echo, recording
