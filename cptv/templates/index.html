@@ -1,4 +1,12 @@
 {% extends "base.html" %} {% block title %}cptv — your connection{% endblock title %}
+{# Leaflet vendor assets, only loaded on the home page (the map lives
+   here only). Loaded in <head> so window.L is defined by the time
+   app.js runs in <body>. Marker images are referenced relatively from
+   leaflet.css; build-assets.mjs vendors them under /static/vendor/images/. #}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/vendor/leaflet.css" />
+<script src="/static/vendor/leaflet.js" defer></script>
+{% endblock extra_head %}
 {% block content %} {% set ip = data.ip %} {% set geo = data.geoip %} {% set asn
 = data.asn %} {% set dns = data.dns %} {% set timing = data.timing %} {% set
 http = data.http %} {% set protocol = data.protocol %} {% set quick_links =
@@ -111,21 +119,23 @@ data.quick_links %}
         </ul>
         {% endif %}
       </div>
-      <details>
-        {# Browsers block navigator.geolocation on insecure origins. On the
-           apex (HTTP) the button becomes a deep link to secure.<base>;
-           the summary makes that explicit. On secure. (already HTTPS)
-           we show neutral copy. See wireGeolocationButton() in app.js. #}
-        {% if request and request.state.subdomain == "secure" %}
-        <summary>Compare with your browser's location</summary>
-        {% else %}
-        <summary>Switch to HTTPS to compare with your browser's location</summary>
-        {% endif %}
-        <button type="button" id="request-geolocation">
-          Show my real location
+      {# One-button compare flow. On secure. the button calls
+         navigator.geolocation directly; on the apex (HTTP, where the API
+         is blocked) it deep-links to secure.<base>/?ask-location=1 so
+         the prompt fires on arrival. wireGeolocationButton() in app.js
+         branches on window.isSecureContext for the click handler. #}
+      <p>
+        <button type="button"
+                id="request-geolocation"
+                class="secondary outline">
+          {% if request and request.state.subdomain == "secure" %}
+          📍 Compare with your real location
+          {% else %}
+          🔒 Switch to HTTPS to compare
+          {% endif %}
         </button>
-        <p id="browser-location"><small>Not requested.</small></p>
-      </details>
+      </p>
+      <p id="browser-location" hidden></p>
     </div>
     {# Map column. Hidden when SSR has no coords (private IP, no GeoLite2
        DB). initGeoMap() in app.js reads data-lat/data-lon and renders a
@@ -139,21 +149,9 @@ data.quick_links %}
            data-lon="{{ geo.longitude if geo and geo.longitude is not none else '' }}"
            role="img"
            aria-label="Map showing your approximate location"></div>
-      <small class="cptv-map-attrib">
-        Map data ©
-        <a href="https://www.openstreetmap.org/copyright"
-           target="_blank" rel="noopener noreferrer">OpenStreetMap</a>
-        contributors. Tiles loaded from <code>tile.openstreetmap.org</code>.
-      </small>
     </div>
   </div>
 </article>
-
-{# Leaflet vendor assets, only loaded on the home page (the map lives
-   here only). Marker images are referenced relatively from
-   leaflet.css; build-assets.mjs vendors them under /static/vendor/images/. #}
-<link rel="stylesheet" href="/static/vendor/leaflet.css" />
-<script src="/static/vendor/leaflet.js" defer></script>
 
 <article id="asn-section"{% if not asn %} hidden{% endif %}>
   <header><strong>🔌 ASN / Network</strong></header>

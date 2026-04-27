@@ -125,7 +125,14 @@
         const el = document.querySelector(`[data-ds="${stack}"]`);
         if (el) el.textContent = text;
       } catch {
-        /* silent — dual-stack probe is best-effort */
+        // Silent — the dual-stack probe is best-effort. When the
+        // user's network can reach only one stack (e.g. v4-only ISP
+        // probing ipv6.<base>), the fetch fails at the network layer
+        // and Firefox/Chrome log a generic "CORS request did not
+        // succeed, status (null)" line in the console. The wording is
+        // misleading: it is NOT a CORS misconfig — the response simply
+        // never arrived. Expected; the page degrades silently and the
+        // unreachable stack's row stays as "…".
       }
     }
   }
@@ -191,6 +198,11 @@
       if (!resp.ok) return null;
       return await resp.json();
     } catch {
+      // Same situation as detectDualStack(): when the user's network
+      // can reach only one stack, the cross-origin fetch to the other
+      // stack's subdomain fails at the network layer and the browser
+      // logs a "CORS request did not succeed, status (null)" line.
+      // Not an actual CORS misconfig; just an unreachable host.
       return null;
     }
   }
@@ -983,16 +995,25 @@
       [lat, lon],
       8,
     );
-    // Attribution rendered outside the map (see .cptv-map-attrib in the
-    // template) so it survives regardless of the tile provider, so we
-    // pass an empty string here to suppress Leaflet's default control.
+    // Leaflet's built-in attribution control (bottom-right of the map)
+    // satisfies the OpenStreetMap Foundation tile-usage policy without
+    // needing a separate <small> line under the map.
+    // https://operations.osmfoundation.org/policies/tiles/
     window.L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
-      attribution: "",
+      attribution:
+        '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
     }).addTo(_geoMap);
     _geoIpMarker = window.L.marker([lat, lon], { title: "GeoIP estimate" })
       .addTo(_geoMap)
       .bindPopup("GeoIP estimate");
+    // Container size may settle to its final width after the first
+    // paint (CSS grid column resolution). invalidateSize() forces
+    // Leaflet to recompute and re-render tiles so the map shows even
+    // if the column briefly had zero width at init time — the classic
+    // "Leaflet renders blank when initialised in a hidden / not-yet-
+    // sized container" gotcha.
+    requestAnimationFrame(() => _geoMap && _geoMap.invalidateSize());
     return _geoMap;
   }
 
@@ -1038,6 +1059,9 @@
   // initiates the request explicitly.
   function requestGeolocation(out) {
     if (!out) return;
+    // Un-hide the placeholder now that we have something to render
+    // (status / coords / error). Keeps the card clean before any click.
+    out.hidden = false;
     out.textContent = "requesting…";
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -1064,15 +1088,13 @@
     if (!btn || !out) return;
 
     if (!window.isSecureContext) {
-      // Insecure origin: API would always be blocked. Repurpose the button
-      // as a deep link to the secure subdomain.
+      // Apex (HTTP). The Geolocation API is blocked on insecure origins,
+      // so the click deep-links to secure.<base> with ?ask-location=1
+      // and the prompt fires on arrival. Button label is set server-side
+      // by Jinja so there's no flash of the wrong copy on slow JS.
       const base = getBaseDomain();
       const target = `https://secure.${base}/?ask-location=1`;
-      btn.textContent = "Open on secure. to share location";
       btn.title = `Browser blocks geolocation on http://. Will redirect to ${target}`;
-      out.innerHTML =
-        "<small>Browser geolocation is only allowed on secure (https) origins. " +
-        "Click the button to continue on <code>secure.</code>.</small>";
       on(btn, "click", () => {
         window.location.href = target;
       });
@@ -1081,12 +1103,12 @@
 
     if (!navigator.geolocation) return;
 
-    // Secure context: only auto-trigger when the query param is set, so
-    // visiting secure. manually never prompts unless the user requested it.
+    // Secure context: trigger the API on click. Auto-fire when the page
+    // was opened via the apex deep link (?ask-location=1) so the round
+    // trip works end-to-end; visiting secure. manually never prompts.
+    on(btn, "click", () => requestGeolocation(out));
     const params = new URLSearchParams(window.location.search);
     const autoAsk = params.get("ask-location") === "1";
-
-    on(btn, "click", () => requestGeolocation(out));
 
     if (autoAsk) {
       requestGeolocation(out);

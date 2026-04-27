@@ -53,11 +53,6 @@
   border-radius: var(--pico-border-radius, 0.25rem);
   background: var(--pico-muted-border-color, #ddd);
 }
-.cptv-map-attrib {
-  display: block;
-  margin-top: 0.25rem;
-  color: var(--pico-muted-color, #777);
-}
 
 /* The request-headers dump in the request-inspection panel can have
    long header values; let them wrap so they don't blow out the card. */
