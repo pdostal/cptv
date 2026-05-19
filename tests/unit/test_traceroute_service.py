@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -528,7 +528,7 @@ class TestStreamMtrLive:
         mock_proc = AsyncMock()
         mock_proc.returncode = None
         mock_proc.wait = AsyncMock()
-        mock_proc.kill = AsyncMock()
+        mock_proc.kill = Mock()
 
         class _TimeoutStdout:
             def __aiter__(self):
