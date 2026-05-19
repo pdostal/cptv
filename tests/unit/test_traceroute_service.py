@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -230,6 +230,17 @@ class TestRunMtr:
         with (
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
             pytest.raises(TracerouteError, match="invalid JSON"),
+        ):
+            await run_mtr(ipaddress.ip_address("8.8.8.8"))
+
+    @pytest.mark.asyncio
+    async def test_mtr_times_out_after_one_minute(self):
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(side_effect=TimeoutError)
+
+        with (
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+            pytest.raises(TracerouteError, match=r"timed out after 60s"),
         ):
             await run_mtr(ipaddress.ip_address("8.8.8.8"))
 
@@ -509,6 +520,36 @@ class TestStreamMtrLive:
         # 5678 us → 5.678 ms, rounded to 2 decimals.
         assert last_hop_1.data["avg_ms"] == 5.68
         assert len(last_hop_1.data["mpls"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_raw_stream_times_out_after_one_minute(self):
+        from cptv.services import traceroute as t
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = None
+        mock_proc.wait = AsyncMock()
+        mock_proc.kill = Mock()
+
+        class TimeoutStdoutMock:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise TimeoutError
+
+        mock_proc.stdout = TimeoutStdoutMock()
+        mock_proc.stderr = AsyncMock()
+        mock_proc.stderr.read = AsyncMock(return_value=b"")
+
+        with (
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+            pytest.raises(TracerouteError, match=r"timed out after 60s"),
+        ):
+            async for _ in t._stream_mtr_raw_lines(ipaddress.ip_address("8.8.8.8")):
+                pass
+
+        mock_proc.kill.assert_called_once()
+        mock_proc.wait.assert_awaited_once()
 
 
 def _live_event(hop_data):
