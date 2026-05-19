@@ -530,14 +530,14 @@ class TestStreamMtrLive:
         mock_proc.wait = AsyncMock()
         mock_proc.kill = Mock()
 
-        class _TimeoutStdout:
+        class TimeoutStdoutMock:
             def __aiter__(self):
                 return self
 
             async def __anext__(self):
                 raise TimeoutError
 
-        mock_proc.stdout = _TimeoutStdout()
+        mock_proc.stdout = TimeoutStdoutMock()
         mock_proc.stderr = AsyncMock()
         mock_proc.stderr.read = AsyncMock(return_value=b"")
 
