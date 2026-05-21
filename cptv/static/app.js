@@ -754,8 +754,12 @@
       return null;
     }
 
-    const setStatus = (html) => {
-      status.innerHTML = html;
+    const setStatus = (message) => {
+      const p = document.createElement("p");
+      const small = document.createElement("small");
+      small.textContent = message;
+      p.appendChild(small);
+      status.replaceChildren(p);
     };
 
     const swapHop = (html) => {
@@ -790,7 +794,7 @@
     source.addEventListener("open", () => {
       opened = true;
       setStatus(
-        `<p><small>Connection established to ${streamUrl}; waiting for the first hop…</small></p>`,
+        `Connection established to ${streamUrl}; waiting for the first hop…`,
       );
     });
 
