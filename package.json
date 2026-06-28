@@ -15,11 +15,11 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.3.0",
-    "eslint-plugin-security": "^4.0.0",
-    "globals": "^17.6.0",
+    "eslint": "^10.6.0",
+    "eslint-plugin-security": "^4.0.1",
+    "globals": "^17.7.0",
     "htmlhint": "^1.9.2",
     "markdownlint-cli2": "^0.22.1",
-    "prettier": "^3.8.3"
+    "prettier": "^3.9.1"
   }
 }
