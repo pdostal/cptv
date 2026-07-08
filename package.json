@@ -19,7 +19,7 @@
     "eslint-plugin-security": "^4.0.0",
     "globals": "^17.6.0",
     "htmlhint": "^1.9.2",
-    "markdownlint-cli2": "^0.22.1",
+    "markdownlint-cli2": "^0.23.0",
     "prettier": "^3.8.3"
   }
 }
