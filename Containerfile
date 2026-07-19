@@ -7,7 +7,7 @@
 # a directory of static JS/CSS/PNG files that are byte-identical regardless
 # of build host architecture, so the COPY --from=assets in the runtime
 # stage works unchanged for every target platform.
-FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS assets
+FROM --platform=$BUILDPLATFORM docker.io/library/node:26-alpine AS assets
 WORKDIR /build
 COPY package.json package-lock.json* ./
 RUN npm ci || npm install
