@@ -28,7 +28,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # ---- stage 3: runtime ----
-FROM docker.io/library/python:3.12-slim-bookworm AS runtime
+FROM docker.io/library/python:3.14-slim-bookworm AS runtime
 
 # hadolint ignore=DL3008
 RUN apt-get update \
