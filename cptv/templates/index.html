@@ -7,10 +7,10 @@
 <link rel="stylesheet" href="/static/vendor/leaflet.css" />
 <script src="/static/vendor/leaflet.js" defer></script>
 {% endblock extra_head %}
-{% block content %} {% set ip = data.ip %} {% set geo = data.geoip %} {% set asn
-= data.asn %} {% set dns = data.dns %} {% set timing = data.timing %} {% set
-http = data.http %} {% set protocol = data.protocol %} {% set quick_links =
-data.quick_links %}
+{% block content %} {% set ip = data.ip %} {% set geo = data.geoip %}
+{% set asn = data.asn %} {% set dns = data.dns %} {% set timing = data.timing %}
+{% set http = data.http %} {% set protocol = data.protocol %}
+{% set quick_links = data.quick_links %}
 
 {% set redirect = data.redirect_origin %}
 {% if redirect and redirect.looks_like_captive_portal %}
@@ -463,8 +463,7 @@ data.quick_links %}
       <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer"
         >{{ link.label }}</a
       >
-      {% if link.description %}<br /><small>{{ link.description }}</small>{%
-      endif %}
+      {% if link.description %}<br /><small>{{ link.description }}</small>{% endif %}
     </li>
     {% endfor %}
   </ul>
