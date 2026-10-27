@@ -5,6 +5,15 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit to release; defaults to the selected ref
+        required: false
+        type: string
+      update_type:
+        description: Dependabot update type
+        required: false
+        type: string
 
 permissions: {}
 
@@ -13,21 +22,68 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.version.outputs.sha }}
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.sha || github.sha }}
+
+      - name: Resolve version
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATE_TYPE: ${{ inputs.update_type }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="$(git tag --points-at "$sha" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+            for _ in $(seq 1 10); do
+              [[ -n "$tag" ]] && break
+              git fetch --force --tags origin
+              latest="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+              latest="${latest:-v0.0.0}"
+              IFS=. read -r major minor patch <<< "${latest#v}"
+              if [[ "$UPDATE_TYPE" == "version-update:semver-major" ]]; then
+                tag="v${major}.$((minor + 1)).0"
+              else
+                tag="v${major}.${minor}.$((patch + 1))"
+              fi
+              if ! gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${tag}" -f sha="$sha" >/dev/null 2>&1; then
+                tag=""
+              fi
+            done
+          fi
+
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Could not allocate release tag" >&2; exit 1; }
+          {
+            echo "sha=${sha}"
+            echo "tag=${tag}"
+            echo "version=${tag#v}"
+          } >> "$GITHUB_OUTPUT"
+
   build-and-push:
     name: Build and push container image
+    needs: prepare
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Resolve version
-        id: version
-        run: |
-          ref="${GITHUB_REF_NAME}"
-          version="${ref#v}"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
       - uses: ./.github/actions/build-push-image
         with:
           registry: ${{ env.REGISTRY }}
@@ -36,7 +92,7 @@ jobs:
           registry_password: ${{ secrets.GITHUB_TOKEN }}
           tags: |
             type=raw,value=latest
-            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.version }}
           labels: |
             org.opencontainers.image.title=cptv
             org.opencontainers.image.description=CaPTiVe — self-hosted network diagnostics.
@@ -45,17 +101,14 @@ jobs:
 
   github-release:
     name: Create GitHub Release
-    needs: build-and-push
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [prepare, build-and-push]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" --generate-notes
+          SHA: ${{ needs.prepare.outputs.sha }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes --target "$SHA" --repo "$GITHUB_REPOSITORY"

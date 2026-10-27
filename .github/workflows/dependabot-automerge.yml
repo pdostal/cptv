@@ -1,0 +1,48 @@
+name: dependabot-automerge
+
+on:
+  workflow_run:
+    workflows: [security]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      github.event.workflow_run.pull_requests[0].number
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: write
+      checks: read
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Read dependency update type
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: gh run download "$RUN_ID" --name dependabot-metadata --dir "$RUNNER_TEMP/dependabot-metadata" --repo "$GITHUB_REPOSITORY"
+
+      - name: Auto-merge dependency update
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          gh pr checks "$PR" --watch --interval 10 --repo "$GITHUB_REPOSITORY"
+          gh pr merge "$PR" --auto --squash --repo "$GITHUB_REPOSITORY"
+
+          sha=""
+          for _ in $(seq 1 30); do
+            sha="$(gh pr view "$PR" --json mergeCommit,state --jq 'if .state == "MERGED" then .mergeCommit.oid else empty end' --repo "$GITHUB_REPOSITORY")"
+            [[ -n "$sha" ]] && break
+            sleep 2
+          done
+          [[ -n "$sha" ]] || { echo "Dependabot PR did not merge" >&2; exit 1; }
+
+          update_type="$(cat "$RUNNER_TEMP/dependabot-metadata/dependabot-update-type")"
+          gh workflow run release.yml --ref master --repo "$GITHUB_REPOSITORY" -f sha="$sha" -f update_type="$update_type"
