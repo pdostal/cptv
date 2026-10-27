@@ -410,7 +410,7 @@ requires-dist = [
     { name = "geoip2", specifier = ">=5.2.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "pydantic-settings", specifier = ">=2.14.1" },
-    { name = "redis", extras = ["hiredis"], specifier = ">=7.4.0" },
+    { name = "redis", extras = ["hiredis"], specifier = ">=8.1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]
 
