@@ -46,11 +46,10 @@ RUN apt-get update \
     && apt-get purge -y --auto-remove libcap2-bin \
     && rm -rf /var/lib/apt/lists/*
 
-# The base image ships pip 25.0.1, which has CVE-2025-8869 / CVE-2026-1703.
-# We run uvicorn from the uv-managed venv, so pip isn't used at runtime — but
-# trivy still scans the system site-packages. Upgrade to a fixed version.
-# hadolint ignore=DL3013
-RUN python3 -m pip install --no-cache-dir --upgrade 'pip>=25.3' \
+# The runtime uses the uv-managed venv, so the system pip/setuptools are dead
+# weight. Removing them also drops the outdated deps they vendor, which trivy
+# would otherwise flag in the system site-packages.
+RUN python3 -m pip uninstall -y pip setuptools \
     && useradd --system --create-home --uid 10001 cptv
 WORKDIR /app
 
