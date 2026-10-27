@@ -74,10 +74,18 @@ def test_subdomain_detection_ignores_port(client: TestClient):
 
 
 def test_subdomain_does_not_rewrite_other_paths(client: TestClient):
-    with patch(
-        "cptv.routes.health.valkey_health_check",
-        new_callable=AsyncMock,
-        return_value="ok",
+    with (
+        patch(
+            "cptv.routes.health.valkey_health_check",
+            new_callable=AsyncMock,
+            return_value="ok",
+        ),
+        patch(
+            "cptv.routes.health._check_mtr_packet",
+            new_callable=AsyncMock,
+            return_value="ok",
+        ),
+        patch("cptv.routes.health._check_mtr_capability", return_value="ok"),
     ):
         r = client.get(
             "/health",
