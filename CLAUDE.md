@@ -18,7 +18,7 @@ What currently exists:
 - `Containerfile` (multi-stage: npm asset build -> uv sync -> runtime with `mtr-tiny` + `cap_net_raw`).
 - `scripts/download-geolite2.sh`, `scripts/build-assets.mjs`.
 - `.github/workflows/`: `lint.yml`, `test.yml` (pytest with Valkey service container + Lighthouse CI), `security.yml` (pip-audit, npm audit, bandit, eslint-security, trivy), `scorecard.yml`, `release.yml`.
-- `.github/dependabot.yml` for pip / npm / GitHub Actions / docker.
+- `.github/dependabot.yml` for uv / npm / GitHub Actions / docker.
 - 129 tests passing: unit tests per service (incl. `stream_mtr_live`, `stream_mtr_cached`, concurrency cap), integration tests for every endpoint / content-negotiation combination, captive-portal heuristic, traceroute cache/rate-limit + SSE event tests.
 
 What is **intentionally** still out of scope (PLAN.md §12):

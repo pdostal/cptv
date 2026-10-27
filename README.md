@@ -525,7 +525,7 @@ If `--http3` reports `h2` instead of `h3`, check (in order):
 
 ## Building locally
 
-Requires Python 3.12+, `uv`, Node 22+, and `podman` (or Docker).
+Requires Python 3.12+, `uv`, Node 24+, and `podman` (or Docker).
 
 ```sh
 # Python deps + test
@@ -643,7 +643,7 @@ All run on every push and pull request (except OSSF Scorecard which runs weekly)
 
 Scan jobs have **no repository secrets** and `contents: read` only — the principle of least privilege is enforced in the workflow permission blocks.
 
-Dependabot watches `pip`, `npm`, `github-actions`, and `docker` ecosystems weekly.
+Dependabot watches `uv`, `npm`, `github-actions`, and `docker` ecosystems weekly.
 
 ## Privacy
 

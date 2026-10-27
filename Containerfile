@@ -7,7 +7,7 @@
 # a directory of static JS/CSS/PNG files that are byte-identical regardless
 # of build host architecture, so the COPY --from=assets in the runtime
 # stage works unchanged for every target platform.
-FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS assets
+FROM --platform=$BUILDPLATFORM docker.io/library/node:24-alpine AS assets
 WORKDIR /build
 COPY package.json package-lock.json* ./
 RUN npm ci || npm install
@@ -19,7 +19,8 @@ RUN mkdir -p cptv/static && node scripts/build-assets.mjs
 # /app/.venv/bin/uvicorn) point at a path that exists in the runtime
 # image. Otherwise they bake in the build-stage path and `exec uvicorn`
 # fails at startup with "No such file or directory".
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS pydeps
+FROM docker.io/library/python:3.12-slim-trixie AS pydeps
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /uvx /bin/
 WORKDIR /app
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
@@ -28,7 +29,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # ---- stage 3: runtime ----
-FROM docker.io/library/python:3.12-slim-bookworm AS runtime
+FROM docker.io/library/python:3.12-slim-trixie AS runtime
 
 # hadolint ignore=DL3008
 RUN apt-get update \
@@ -45,11 +46,10 @@ RUN apt-get update \
     && apt-get purge -y --auto-remove libcap2-bin \
     && rm -rf /var/lib/apt/lists/*
 
-# The base image ships pip 25.0.1, which has CVE-2025-8869 / CVE-2026-1703.
-# We run uvicorn from the uv-managed venv, so pip isn't used at runtime — but
-# trivy still scans the system site-packages. Upgrade to a fixed version.
-# hadolint ignore=DL3013
-RUN python3 -m pip install --no-cache-dir --upgrade 'pip>=25.3' \
+# The runtime uses the uv-managed venv, so the system pip/setuptools are dead
+# weight. Removing them also drops the outdated deps they vendor, which trivy
+# would otherwise flag in the system site-packages.
+RUN python3 -m pip uninstall -y pip setuptools \
     && useradd --system --create-home --uid 10001 cptv
 WORKDIR /app
 
