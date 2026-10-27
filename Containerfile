@@ -7,7 +7,7 @@
 # a directory of static JS/CSS/PNG files that are byte-identical regardless
 # of build host architecture, so the COPY --from=assets in the runtime
 # stage works unchanged for every target platform.
-FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS assets
+FROM --platform=$BUILDPLATFORM docker.io/library/node:24-alpine AS assets
 WORKDIR /build
 COPY package.json package-lock.json* ./
 RUN npm ci || npm install
@@ -19,7 +19,8 @@ RUN mkdir -p cptv/static && node scripts/build-assets.mjs
 # /app/.venv/bin/uvicorn) point at a path that exists in the runtime
 # image. Otherwise they bake in the build-stage path and `exec uvicorn`
 # fails at startup with "No such file or directory".
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS pydeps
+FROM docker.io/library/python:3.12-slim-trixie AS pydeps
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /uvx /bin/
 WORKDIR /app
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
@@ -28,7 +29,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # ---- stage 3: runtime ----
-FROM docker.io/library/python:3.12-slim-bookworm AS runtime
+FROM docker.io/library/python:3.12-slim-trixie AS runtime
 
 # hadolint ignore=DL3008
 RUN apt-get update \
