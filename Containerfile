@@ -19,7 +19,7 @@ RUN mkdir -p cptv/static && node scripts/build-assets.mjs
 # /app/.venv/bin/uvicorn) point at a path that exists in the runtime
 # image. Otherwise they bake in the build-stage path and `exec uvicorn`
 # fails at startup with "No such file or directory".
-FROM docker.io/library/python:3.12-slim-trixie AS pydeps
+FROM docker.io/library/python:3.15-slim-trixie AS pydeps
 COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /uvx /bin/
 WORKDIR /app
 ENV UV_LINK_MODE=copy \
@@ -29,7 +29,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # ---- stage 3: runtime ----
-FROM docker.io/library/python:3.12-slim-trixie AS runtime
+FROM docker.io/library/python:3.15-slim-trixie AS runtime
 
 # hadolint ignore=DL3008
 RUN apt-get update \
